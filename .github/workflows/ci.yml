@@ -47,6 +47,7 @@ jobs:
       SQLALCHEMY_DATABASE_URI: postgresql+asyncpg://school:ci-password@localhost:5432/school_erp_test
       REDIS_URL: redis://localhost:6379/0
       SECURE_COOKIES: "false"
+      RUN_INTEGRATION_TESTS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -60,10 +61,10 @@ jobs:
         run: python -m pip install -r requirements-dev.txt
       - name: Lint backend
         run: python -m ruff check .
-      - name: Run backend tests
-        run: python -m pytest
       - name: Apply database migration
         run: python -m alembic upgrade head
+      - name: Run backend tests
+        run: python -m pytest
 
   frontend:
     name: Frontend lint and build
