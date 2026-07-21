@@ -68,3 +68,7 @@ students and classrooms before creating them. It has been replaced by a coherent
 `0001_initial_schema` baseline. Existing prototype databases should be recreated
 before applying this baseline; do not point it at production data without a
 bespoke data migration.
+
+The automated migration preflight refuses legacy managed tables instead of
+dropping them. See [docs/migration-strategy.md](docs/migration-strategy.md) for
+the approved prototype-reset and production-data procedures.
