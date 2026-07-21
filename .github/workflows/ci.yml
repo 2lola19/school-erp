@@ -96,3 +96,10 @@ jobs:
           POSTGRES_PASSWORD: compose-ci-password
           SECRET_KEY: compose-ci-secret-key-with-at-least-32-characters
         run: docker compose config --quiet
+      - name: Validate staging Compose
+        env:
+          STAGING_POSTGRES_PASSWORD: staging-compose-ci-password
+          STAGING_SECRET_KEY: staging-compose-ci-secret-key-with-at-least-32-characters
+          STAGING_ADMIN_EMAIL: staging-admin@example.com
+          STAGING_ADMIN_PASSWORD: staging-admin-ci-password
+        run: docker compose -f deploy/staging/docker-compose.yml config --quiet
