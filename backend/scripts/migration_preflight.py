@@ -7,7 +7,7 @@ from sqlalchemy import inspect, text
 
 from app.db.session import engine
 
-BASELINE_REVISION = "0001_initial_schema"
+SAFE_REVISIONS = {"0001_initial_schema", "0002_academic_operations"}
 MANAGED_TABLES = {
     "attendance",
     "classrooms",
@@ -25,7 +25,7 @@ def assess_schema(table_names: Collection[str], revision: str | None) -> str:
     tables = set(table_names)
     if not tables:
         return "EMPTY"
-    if revision == BASELINE_REVISION:
+    if revision in SAFE_REVISIONS:
         return "CURRENT"
     if tables.isdisjoint(MANAGED_TABLES) and not revision:
         return "EMPTY"

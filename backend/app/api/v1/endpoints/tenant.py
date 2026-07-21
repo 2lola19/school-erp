@@ -19,23 +19,12 @@ from app.models.core import (
     User,
 )
 from app.schemas.auth import CurrentUser
+from app.services.role_templates import (
+    SCHOOL_ADMIN_PERMISSIONS,
+    ensure_tenant_role_templates,
+)
 
 router = APIRouter()
-
-SCHOOL_ADMIN_PERMISSIONS = {
-    "students.read",
-    "students.create",
-    "students.update",
-    "staff.read",
-    "staff.create",
-    "classes.read",
-    "classes.manage",
-    "roles.assign",
-    "roles.approve",
-    "roles.revoke",
-    "audit_logs.read",
-}
-
 
 class TenantCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
@@ -79,6 +68,12 @@ async def create_tenant(
         raise HTTPException(status_code=409, detail="Tenant domain already exists")
     tenant = Tenant(name=payload.name, domain=domain)
     session.add(tenant)
+    await session.flush()
+    await session.execute(
+        text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
+        {"tenant_id": str(tenant.id)},
+    )
+    await ensure_tenant_role_templates(session, tenant.id)
     await session.commit()
     await session.refresh(tenant)
     return tenant
@@ -99,6 +94,7 @@ async def create_school_admin(
         text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
         {"tenant_id": str(tenant_id)},
     )
+    await ensure_tenant_role_templates(session, tenant_id)
     if await session.scalar(
         select(User).where(User.tenant_id == tenant_id, User.email == payload.email.lower())
     ):

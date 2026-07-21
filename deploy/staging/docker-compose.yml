@@ -35,7 +35,7 @@ services:
   backend:
     build:
       context: ../../backend
-    command: ["sh", "-c", "python -m scripts.migration_preflight && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    command: ["sh", "-c", "python -m scripts.migration_preflight && alembic upgrade head && python -m scripts.sync_role_templates && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     ports:
       - "127.0.0.1:${STAGING_API_PORT:-18000}:8000"
     environment:

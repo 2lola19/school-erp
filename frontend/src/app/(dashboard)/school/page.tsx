@@ -93,6 +93,25 @@ export default function SchoolDashboard() {
           {can('classes.read') && <Metric title="Classrooms" value={classrooms.length} />}
         </section>
 
+        {profile.permissions.some((permission) =>
+          permission.startsWith('academic.')
+          || permission.startsWith('admissions.')
+          || permission.startsWith('attendance.')
+          || permission.startsWith('timetable.')
+          || permission.startsWith('examinations.')
+          || permission.startsWith('report_cards.'),
+        ) && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Academic administration</CardTitle>
+              <CardDescription>Admissions, calendars, attendance, timetables, examinations, and report cards.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={() => router.push('/school/academic')}>Open academic workspace</Button>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader><CardTitle>Available modules</CardTitle><CardDescription>Modules are derived from effective permissions, including secondary roles and explicit restrictions.</CardDescription></CardHeader>
           <CardContent className="flex flex-wrap gap-2">
