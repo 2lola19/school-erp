@@ -1,8 +1,8 @@
 # School ERP
 
 A multi-tenant school management foundation built with FastAPI, PostgreSQL,
-Redis, and Next.js. The current release focuses on secure identity, academic
-operations, and auditable multi-role staff authorization.
+Redis, and Next.js. The current release combines secure identity, academic
+operations, school services, and auditable multi-role staff authorization.
 
 ## Security model
 
@@ -16,11 +16,15 @@ operations, and auditable multi-role staff authorization.
 - Append-only audit records for role and protected academic changes.
 - Short-lived access tokens in memory and rotating refresh tokens in HTTP-only cookies.
 - Admissions, attendance, timetables, examinations, and published report-card workflows.
+- Dual-controlled finance, isolated health and counselling records, and audited break-glass access.
+- Library, transport, hostel, and extracurricular workflows with capacity and approval controls.
 
 See [docs/authorization-architecture.md](docs/authorization-architecture.md) for
 the detailed model and endpoint map.
 See [docs/academic-operations.md](docs/academic-operations.md) for the academic
 administration workflows.
+See [docs/school-services.md](docs/school-services.md) for finance, welfare, and
+student-life service boundaries.
 
 ## Local setup
 

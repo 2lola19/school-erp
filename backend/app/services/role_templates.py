@@ -4,7 +4,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.core import Permission, Role, RolePermission, Staff, StaffRoleAssignment, User
+from app.models.core import (
+    Permission,
+    Role,
+    RoleConflict,
+    RolePermission,
+    Staff,
+    StaffRoleAssignment,
+    User,
+)
 
 
 @dataclass(frozen=True)
@@ -33,6 +41,15 @@ SCHOOL_ADMIN_PERMISSIONS = frozenset(
         "classes.read",
         "examinations.manage",
         "examinations.read",
+        "finance.read",
+        "finance.report",
+        "health.analytics.read",
+        "health.emergency_flags.read",
+        "hostel.manage",
+        "hostel.read",
+        "library.loans.manage",
+        "library.manage",
+        "library.read",
         "report_cards.approve",
         "report_cards.generate",
         "report_cards.publish",
@@ -52,6 +69,12 @@ SCHOOL_ADMIN_PERMISSIONS = frozenset(
         "subjects.manage",
         "timetable.manage",
         "timetable.read",
+        "transport.manage",
+        "transport.read",
+        "activities.achievement.approve",
+        "activities.enroll",
+        "activities.manage",
+        "activities.read",
     }
 )
 
@@ -205,6 +228,163 @@ ROLE_TEMPLATES = (
             }
         ),
     ),
+    RoleTemplate(
+        "Bursar / Accountant",
+        "BURSAR",
+        "FINANCE",
+        frozenset(
+            {
+                "finance.fees.manage",
+                "finance.invoice",
+                "finance.read",
+                "finance.receive_payment",
+                "finance.refund.request",
+                "finance.report",
+            }
+        ),
+        sensitive=True,
+        requires_approval=True,
+    ),
+    RoleTemplate(
+        "Payment Approver",
+        "PAYMENT_APPROVER",
+        "FINANCE",
+        frozenset(
+            {
+                "finance.approve_payment",
+                "finance.read",
+                "finance.refund.approve",
+            }
+        ),
+        sensitive=True,
+        requires_approval=True,
+    ),
+    RoleTemplate(
+        "Medical Officer",
+        "MEDICAL_OFFICER",
+        "HEALTH",
+        frozenset(
+            {
+                "health.analytics.read",
+                "health.break_glass.grant",
+                "health.consents.manage",
+                "health.emergency_flags.read",
+                "health.records.read",
+                "health.records.write",
+            }
+        ),
+        sensitive=True,
+        requires_approval=True,
+    ),
+    RoleTemplate(
+        "School Nurse",
+        "SCHOOL_NURSE",
+        "HEALTH",
+        frozenset(
+            {
+                "health.consents.manage",
+                "health.emergency_flags.read",
+                "health.records.read",
+                "health.records.write",
+            }
+        ),
+        sensitive=True,
+        requires_approval=True,
+    ),
+    RoleTemplate(
+        "Health Records Auditor",
+        "HEALTH_RECORDS_AUDITOR",
+        "HEALTH",
+        frozenset(
+            {
+                "health.break_glass.review",
+                "health.records.read",
+            }
+        ),
+        sensitive=True,
+        requires_approval=True,
+    ),
+    RoleTemplate(
+        "Guidance Counsellor",
+        "GUIDANCE_COUNSELLOR",
+        "HEALTH",
+        frozenset(
+            {
+                "counselling.cases.manage",
+                "counselling.cases.read",
+                "counselling.encounters.write",
+            }
+        ),
+        sensitive=True,
+        requires_approval=True,
+    ),
+    RoleTemplate(
+        "Librarian",
+        "LIBRARIAN",
+        "SUPPORT",
+        frozenset({"library.loans.manage", "library.manage", "library.read"}),
+    ),
+    RoleTemplate(
+        "Transport Manager",
+        "TRANSPORT_MANAGER",
+        "SUPPORT",
+        frozenset({"transport.manage", "transport.read"}),
+    ),
+    RoleTemplate(
+        "Hostel Supervisor",
+        "HOSTEL_SUPERVISOR",
+        "STUDENT_LIFE",
+        frozenset(
+            {
+                "health.emergency_flags.read",
+                "hostel.manage",
+                "hostel.read",
+            }
+        ),
+    ),
+    RoleTemplate(
+        "Activity Patron",
+        "ACTIVITY_PATRON",
+        "STUDENT_LIFE",
+        frozenset(
+            {
+                "activities.achievement.submit",
+                "activities.attendance",
+                "activities.enroll",
+                "activities.read",
+                "health.emergency_flags.read",
+            }
+        ),
+    ),
+    RoleTemplate(
+        "Activity Coordinator",
+        "ACTIVITY_COORDINATOR",
+        "STUDENT_LIFE",
+        frozenset(
+            {
+                "activities.achievement.approve",
+                "activities.enroll",
+                "activities.manage",
+                "activities.read",
+            }
+        ),
+        requires_approval=True,
+    ),
+)
+
+ROLE_CONFLICT_TEMPLATES = (
+    (
+        "BURSAR",
+        "PAYMENT_APPROVER",
+        "BLOCK",
+        "Payment recording and payment approval must remain separated.",
+    ),
+    (
+        "MEDICAL_OFFICER",
+        "HEALTH_RECORDS_AUDITOR",
+        "BLOCK",
+        "Clinical record maintenance and independent health audit must remain separated.",
+    ),
 )
 
 
@@ -220,6 +400,7 @@ async def ensure_tenant_role_templates(session: AsyncSession, tenant_id: UUID) -
         permissions[name] = permission
 
     changed_role_ids: set[UUID] = set()
+    roles_by_code: dict[str, Role] = {}
     changes = 0
     for template in ROLE_TEMPLATES:
         role = await session.scalar(
@@ -271,6 +452,30 @@ async def ensure_tenant_role_templates(session: AsyncSession, tenant_id: UUID) -
                 )
                 changed_role_ids.add(role.id)
                 changes += 1
+        roles_by_code[template.code] = role
+
+    for left_code, right_code, action, reason in ROLE_CONFLICT_TEMPLATES:
+        left = roles_by_code[left_code]
+        right = roles_by_code[right_code]
+        conflict = await session.scalar(
+            select(RoleConflict.id).where(
+                RoleConflict.tenant_id == tenant_id,
+                RoleConflict.role_id == left.id,
+                RoleConflict.conflicting_role_id == right.id,
+            )
+        )
+        if not conflict:
+            session.add(
+                RoleConflict(
+                    tenant_id=tenant_id,
+                    role_id=left.id,
+                    conflicting_role_id=right.id,
+                    conflict_level="CRITICAL",
+                    action=action,
+                    reason=reason,
+                )
+            )
+            changes += 1
 
     if changed_role_ids:
         users = await session.execute(
