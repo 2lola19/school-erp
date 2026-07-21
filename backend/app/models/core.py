@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -12,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     Time,
@@ -573,6 +575,387 @@ class ReportCardEntry(TenantBase):
     score: Mapped[float] = mapped_column(Float)
     letter_grade: Mapped[str] = mapped_column(String(5))
     remark: Mapped[str | None] = mapped_column(Text)
+
+
+class FeeSchedule(TenantBase):
+    __tablename__ = "fee_schedules"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_fee_schedule_name"),
+        CheckConstraint("amount > 0", name="ck_fee_schedule_amount"),
+    )
+
+    name: Mapped[str] = mapped_column(String(150))
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    academic_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("academic_sessions.id", ondelete="SET NULL")
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Invoice(TenantBase):
+    __tablename__ = "invoices"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "invoice_number", name="uq_invoice_number"),
+        CheckConstraint("amount > 0", name="ck_invoice_amount"),
+        CheckConstraint("balance >= 0", name="ck_invoice_balance"),
+        CheckConstraint("status IN ('OPEN','PAID','VOID')", name="ck_invoice_status"),
+    )
+
+    invoice_number: Mapped[str] = mapped_column(String(50))
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="RESTRICT")
+    )
+    fee_schedule_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("fee_schedules.id", ondelete="RESTRICT")
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    balance: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    status: Mapped[str] = mapped_column(String(20), default="OPEN")
+    due_on: Mapped[date | None] = mapped_column(Date)
+    issued_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+
+class Payment(TenantBase):
+    __tablename__ = "payments"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "reference", name="uq_payment_reference"),
+        CheckConstraint("amount > 0", name="ck_payment_amount"),
+        CheckConstraint(
+            "status IN ('PENDING','APPROVED','REJECTED')", name="ck_payment_status"
+        ),
+    )
+
+    invoice_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="RESTRICT")
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    reference: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), default="PENDING")
+    received_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RefundRequest(TenantBase):
+    __tablename__ = "refund_requests"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_refund_amount"),
+        CheckConstraint(
+            "status IN ('PENDING','APPROVED','REJECTED')", name="ck_refund_status"
+        ),
+    )
+
+    payment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payments.id", ondelete="RESTRICT")
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="PENDING")
+    requested_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class HealthRecord(TenantBase):
+    __tablename__ = "health_records"
+    __table_args__ = (UniqueConstraint("tenant_id", "student_id", name="uq_student_health_record"),)
+
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE")
+    )
+    allergies: Mapped[list] = mapped_column(JSON, default=list)
+    chronic_conditions: Mapped[list] = mapped_column(JSON, default=list)
+    medications: Mapped[list] = mapped_column(JSON, default=list)
+    immunisations: Mapped[list] = mapped_column(JSON, default=list)
+    emergency_plan: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+
+class HealthEncounter(TenantBase):
+    __tablename__ = "health_encounters"
+
+    health_record_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("health_records.id", ondelete="CASCADE")
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    summary: Mapped[str] = mapped_column(Text)
+    treatment: Mapped[str | None] = mapped_column(Text)
+    referral: Mapped[str | None] = mapped_column(Text)
+    recorded_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+
+class MedicalConsent(TenantBase):
+    __tablename__ = "medical_consents"
+    __table_args__ = (
+        CheckConstraint("status IN ('GRANTED','DECLINED','REVOKED')", name="ck_medical_consent_status"),
+    )
+
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE")
+    )
+    consent_type: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20))
+    valid_from: Mapped[date] = mapped_column(Date)
+    valid_until: Mapped[date | None] = mapped_column(Date)
+    recorded_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+
+class EmergencyHealthFlag(TenantBase):
+    __tablename__ = "emergency_health_flags"
+
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE"), index=True
+    )
+    label: Mapped[str] = mapped_column(String(150))
+    instructions: Mapped[str] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+
+class BreakGlassAccess(TenantBase):
+    __tablename__ = "break_glass_access"
+    __table_args__ = (
+        CheckConstraint("status IN ('ACTIVE','REVIEWED','REVOKED')", name="ck_break_glass_status"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE")
+    )
+    reason: Mapped[str] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
+    granted_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CounsellingCase(TenantBase):
+    __tablename__ = "counselling_cases"
+    __table_args__ = (
+        CheckConstraint("status IN ('OPEN','CLOSED')", name="ck_counselling_case_status"),
+    )
+
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE")
+    )
+    assigned_counsellor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id")
+    )
+    referral_reason: Mapped[str] = mapped_column(Text)
+    support_plan: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="OPEN")
+    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+
+class CounsellingEncounter(TenantBase):
+    __tablename__ = "counselling_encounters"
+
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("counselling_cases.id", ondelete="CASCADE")
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    confidential_notes: Mapped[str] = mapped_column(Text)
+    outcome: Mapped[str | None] = mapped_column(Text)
+    recorded_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+
+class LibraryItem(TenantBase):
+    __tablename__ = "library_items"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "catalogue_code", name="uq_library_catalogue_code"),
+        CheckConstraint("total_copies >= 0", name="ck_library_total_copies"),
+        CheckConstraint("available_copies >= 0", name="ck_library_available_copies"),
+    )
+
+    catalogue_code: Mapped[str] = mapped_column(String(50))
+    isbn: Mapped[str | None] = mapped_column(String(30))
+    title: Mapped[str] = mapped_column(String(255))
+    author: Mapped[str | None] = mapped_column(String(255))
+    total_copies: Mapped[int] = mapped_column(Integer, default=1)
+    available_copies: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class LibraryLoan(TenantBase):
+    __tablename__ = "library_loans"
+    __table_args__ = (
+        CheckConstraint("status IN ('ISSUED','RETURNED','LOST')", name="ck_library_loan_status"),
+    )
+
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("library_items.id", ondelete="RESTRICT")
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="RESTRICT")
+    )
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    due_on: Mapped[date] = mapped_column(Date)
+    returned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(20), default="ISSUED")
+    issued_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+
+class TransportRoute(TenantBase):
+    __tablename__ = "transport_routes"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_transport_route_name"),
+        CheckConstraint("capacity > 0", name="ck_transport_route_capacity"),
+    )
+
+    name: Mapped[str] = mapped_column(String(150))
+    pickup_points: Mapped[list] = mapped_column(JSON, default=list)
+    capacity: Mapped[int] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class TransportAssignment(TenantBase):
+    __tablename__ = "transport_assignments"
+    __table_args__ = (
+        CheckConstraint("status IN ('ACTIVE','INACTIVE')", name="ck_transport_assignment_status"),
+        Index(
+            "uq_active_student_transport_assignment",
+            "tenant_id",
+            "student_id",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE'"),
+        ),
+    )
+
+    route_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("transport_routes.id", ondelete="RESTRICT")
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE")
+    )
+    pickup_point: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
+
+
+class Hostel(TenantBase):
+    __tablename__ = "hostels"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_hostel_name"),
+        CheckConstraint("capacity > 0", name="ck_hostel_capacity"),
+    )
+
+    name: Mapped[str] = mapped_column(String(150))
+    gender_policy: Mapped[str | None] = mapped_column(String(50))
+    capacity: Mapped[int] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class HostelRoom(TenantBase):
+    __tablename__ = "hostel_rooms"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "hostel_id", "name", name="uq_hostel_room_name"),
+        CheckConstraint("capacity > 0", name="ck_hostel_room_capacity"),
+    )
+
+    hostel_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hostels.id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    capacity: Mapped[int] = mapped_column(Integer)
+
+
+class HostelAssignment(TenantBase):
+    __tablename__ = "hostel_assignments"
+    __table_args__ = (
+        CheckConstraint("status IN ('ACTIVE','INACTIVE')", name="ck_hostel_assignment_status"),
+        CheckConstraint(
+            "ends_on IS NULL OR ends_on >= starts_on",
+            name="ck_hostel_assignment_dates",
+        ),
+        Index(
+            "uq_active_student_hostel_assignment",
+            "tenant_id",
+            "student_id",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE'"),
+        ),
+    )
+
+    room_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hostel_rooms.id", ondelete="RESTRICT")
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE")
+    )
+    starts_on: Mapped[date] = mapped_column(Date)
+    ends_on: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
+
+
+class Activity(TenantBase):
+    __tablename__ = "activities"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_activity_name"),
+        CheckConstraint("status IN ('ACTIVE','INACTIVE')", name="ck_activity_status"),
+    )
+
+    name: Mapped[str] = mapped_column(String(150))
+    category: Mapped[str] = mapped_column(String(100))
+    lead_staff_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("staff.id", ondelete="SET NULL")
+    )
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
+
+
+class ActivityEnrollment(TenantBase):
+    __tablename__ = "activity_enrollments"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "activity_id", "student_id", name="uq_activity_enrollment"),
+        CheckConstraint("status IN ('ACTIVE','WITHDRAWN')", name="ck_activity_enrollment_status"),
+    )
+
+    activity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("activities.id", ondelete="CASCADE")
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE")
+    )
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
+
+
+class ActivityAttendance(TenantBase):
+    __tablename__ = "activity_attendance"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "activity_id", "student_id", "date", name="uq_activity_attendance"),
+        CheckConstraint("status IN ('PRESENT','ABSENT','EXCUSED')", name="ck_activity_attendance_status"),
+    )
+
+    activity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("activities.id", ondelete="CASCADE")
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE")
+    )
+    date: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(20))
+    recorded_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+
+
+class ActivityAchievement(TenantBase):
+    __tablename__ = "activity_achievements"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('SUBMITTED','APPROVED','REJECTED')", name="ck_activity_achievement_status"
+        ),
+    )
+
+    activity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("activities.id", ondelete="CASCADE")
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("students.id", ondelete="CASCADE")
+    )
+    title: Mapped[str] = mapped_column(String(255))
+    details: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="SUBMITTED")
+    submitted_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AuditLog(TenantBase):

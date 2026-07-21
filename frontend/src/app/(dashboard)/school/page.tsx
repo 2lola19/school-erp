@@ -112,6 +112,26 @@ export default function SchoolDashboard() {
           </Card>
         )}
 
+        {profile.permissions.some((permission) =>
+          permission.startsWith('finance.')
+          || permission.startsWith('health.')
+          || permission.startsWith('counselling.')
+          || permission.startsWith('library.')
+          || permission.startsWith('transport.')
+          || permission.startsWith('hostel.')
+          || permission.startsWith('activities.'),
+        ) && (
+          <Card>
+            <CardHeader>
+              <CardTitle>School services</CardTitle>
+              <CardDescription>Finance, welfare, library, transport, hostel, and extracurricular operations.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={() => router.push('/school/services')}>Open school services</Button>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader><CardTitle>Available modules</CardTitle><CardDescription>Modules are derived from effective permissions, including secondary roles and explicit restrictions.</CardDescription></CardHeader>
           <CardContent className="flex flex-wrap gap-2">

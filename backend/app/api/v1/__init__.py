@@ -1,5 +1,13 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import academic, academic_admin, auth, staff_roles, students, tenant
+from app.api.v1.endpoints import (
+    academic,
+    academic_admin,
+    auth,
+    school_services,
+    staff_roles,
+    students,
+    tenant,
+)
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -14,3 +22,8 @@ api_router.include_router(
     tags=["Academic Administration"],
 )
 api_router.include_router(staff_roles.router, prefix="/staff", tags=["Staff roles and permissions"])
+api_router.include_router(
+    school_services.router,
+    prefix="/school-services",
+    tags=["School Services"],
+)

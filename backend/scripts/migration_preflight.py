@@ -7,7 +7,11 @@ from sqlalchemy import inspect, text
 
 from app.db.session import engine
 
-SAFE_REVISIONS = {"0001_initial_schema", "0002_academic_operations"}
+SAFE_REVISIONS = {
+    "0001_initial_schema",
+    "0002_academic_operations",
+    "0003_school_services",
+}
 MANAGED_TABLES = {
     "attendance",
     "classrooms",

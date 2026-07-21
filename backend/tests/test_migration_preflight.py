@@ -20,6 +20,13 @@ def test_academic_operations_revision_is_safe() -> None:
     )
 
 
+def test_school_services_revision_is_safe() -> None:
+    assert (
+        assess_schema(["users", "fee_schedules"], "0003_school_services")
+        == "CURRENT"
+    )
+
+
 def test_unversioned_managed_tables_are_refused() -> None:
     assert assess_schema(["users", "students"], None) == "PROTOTYPE_OR_UNKNOWN"
 
