@@ -1,30 +1,54 @@
-from pydantic import BaseModel, ConfigDict
-from typing import List
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
 
 class LoginCredentials(BaseModel):
-    domain: str = ""
-    email: str
-    password: str
-    model_config = ConfigDict(from_attributes=True)
+    domain: str = Field(min_length=1, max_length=255)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+
 
 class TokenResponse(BaseModel):
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
+    expires_in: int
+
 
 class TokenPayload(BaseModel):
-    sub: str
-    tenant_id: str
-    role: str
-    permissions: List[str] = []
+    sub: UUID
+    tenant_id: UUID
+    session_id: UUID
+    permission_version: int = Field(ge=1)
+    type: str
+    iat: int | None = None
+    exp: int
+
+    model_config = ConfigDict(extra="forbid")
 
 
-import typing
-from pydantic import BaseModel
+class CurrentUser(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    email: EmailStr
+    permission_version: int
+    permissions: set[str] = Field(default_factory=set)
 
-class TokenPayload(BaseModel):
-    sub: typing.Optional[str] = None
-    exp: typing.Optional[int] = None
-    tenant_id: typing.Any = None
-    role: typing.Any = None
-    permissions: typing.List[str] = []
+
+class Workspace(BaseModel):
+    assignment_id: UUID
+    role_id: UUID
+    name: str
+    code: str
+    category: str
+    assignment_type: str
+    scope: dict = Field(default_factory=dict)
+
+
+class UserContextResponse(BaseModel):
+    user_id: UUID
+    tenant_id: UUID
+    email: EmailStr
+    permission_version: int
+    permissions: list[str]
+    workspaces: list[Workspace]

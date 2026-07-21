@@ -1,110 +1,70 @@
 'use client';
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/store/authStore';
-import { apiClient } from '@/lib/api-client';
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { apiClient } from '@/lib/api-client';
+import { useAuthStore } from '@/store/authStore';
+import type { TokenResponse, UserContext } from '@/types/api';
 
 export default function LoginPage() {
+  const [domain, setDomain] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  
-  // Do not destructure unknown functions. Pull the raw store object.
-  const authStore = useAuthStore();
+  const { setAccessToken, setProfile } = useAuthStore();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setIsLoading(true);
     setError('');
-    
     try {
-      const res = await apiClient.post('/auth/login', { email: email, username: email, password: password });
-      const tokenStr = res.data?.access_token || res.data?.token;
-      
-      if (!tokenStr) {
-        throw new Error("Backend returned 200 OK but no token was found.");
-      }
-
-      const base64Url = tokenStr.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const payload = JSON.parse(window.atob(base64));
-
-      // 1. Inject token directly into browser storage (bypasses missing store methods)
-      localStorage.setItem('token', tokenStr);
-      localStorage.setItem('access_token', tokenStr);
-      document.cookie = `token=${tokenStr}; path=/; max-age=86400`;
-
-      // 2. Safely attempt state sync only if standard methods exist
-        const storeAny = authStore as any;
-        if (storeAny) {
-          if (typeof storeAny.setTokens === 'function') storeAny.setTokens(tokenStr, '');
-          else if (typeof storeAny.setToken === 'function') storeAny.setToken(tokenStr);
-        }
-
-
-      // 3. Mathematical RBAC Routing
-      if (payload.permissions && payload.permissions.includes('view_all_tenants')) {
-        router.push('/superadmin');
-      } else {
-        router.push('/school');
-      }
-      
-    } catch (err: any) {
-      console.error(err);
-      if (err.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        if (Array.isArray(detail)) {
-          const parsedErrors = detail.map((d: any) => `${d.loc[d.loc.length - 1]}: ${d.msg}`).join(' | ');
-          setError(`Validation Error -> ${parsedErrors}`);
-        } else if (typeof detail === 'string') {
-          setError(detail);
-        } else {
-          setError(JSON.stringify(detail));
-        }
-      } else if (err.message) {
-        setError(`Client Error: ${err.message}`);
-      } else {
-        setError('An unknown connection error occurred.');
-      }
+      const login = await apiClient.post<TokenResponse>('/auth/login', { domain, email, password });
+      setAccessToken(login.data.access_token);
+      const context = await apiClient.get<UserContext>('/auth/me');
+      setProfile(context.data);
+      const primary = context.data.workspaces.find((workspace) => workspace.assignment_type === 'PRIMARY');
+      router.replace(primary?.code === 'PLATFORM_ADMIN' ? '/superadmin' : '/school');
+    } catch (caught: unknown) {
+      const response = caught as { response?: { data?: { detail?: string } } };
+      setError(response.response?.data?.detail ?? 'Unable to sign in. Check your school domain and credentials.');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
       <Card className="w-full max-w-md shadow-lg">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold">System Login</CardTitle>
-          <CardDescription>Enter your credentials to access your control plane</CardDescription>
+        <CardHeader>
+          <CardTitle className="text-2xl">School ERP sign in</CardTitle>
+          <CardDescription>Use your school domain and staff account.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Email Address</label>
-              <input required type="text" value={email} onChange={(e) => setEmail(e.target.value)} className="flex h-10 w-full rounded-md border px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Password</label>
-              <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="flex h-10 w-full rounded-md border px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-            </div>
-            
-            {error && (
-              <div className="text-sm font-medium text-red-600 bg-red-50 border border-red-200 p-3 rounded-md break-words">
-                {error}
-              </div>
-            )}
-            
-            <Button className="w-full font-semibold" type="submit" disabled={isLoading}>
-              {isLoading ? 'Authenticating...' : 'Sign In'}
+            <label className="block text-sm font-medium">
+              School domain
+              <input required value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="school.example" className="mt-1 flex h-10 w-full rounded-md border px-3" />
+            </label>
+            <label className="block text-sm font-medium">
+              Email address
+              <input required type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-1 flex h-10 w-full rounded-md border px-3" />
+            </label>
+            <label className="block text-sm font-medium">
+              Password
+              <input required type="password" minLength={8} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 flex h-10 w-full rounded-md border px-3" />
+            </label>
+            {error && <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+            <Button className="w-full" type="submit" disabled={isLoading}>
+              {isLoading ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
         </CardContent>
       </Card>
-    </div>
+    </main>
   );
 }
