@@ -1,46 +1,46 @@
-import axios from 'axios';
-import { queueMutation, processQueue } from './sync-queue';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+
+import { useAuthStore } from '@/store/authStore';
+import type { TokenResponse } from '@/types/api';
+
+const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
 export const apiClient = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1',
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  baseURL,
+  withCredentials: true,
+  headers: { 'Content-Type': 'application/json' },
 });
 
-// Request Interceptor: Attach Token
 apiClient.interceptors.request.use((config) => {
-  if (typeof window !== 'undefined') {
-    const rawToken = localStorage.getItem('access_token') || localStorage.getItem('token');
-    if (rawToken) {
-      config.headers.Authorization = `Bearer ${rawToken}`;
-    }
-  }
+  const token = useAuthStore.getState().accessToken;
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// Response Interceptor: Offline Mutation Trapping
+type RetryableRequest = InternalAxiosRequestConfig & { _retry?: boolean };
+
 apiClient.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    // If there is no response object, the server could not be reached
-    if (!error.response && error.config && error.config.method !== 'get') {
-      await queueMutation(error.config);
-      
-      // Reject with a mock payload so the UI catches it and displays the queue status gracefully
-      return Promise.reject({
-        response: {
-          data: { detail: 'Network offline. Action securely queued for background sync.' }
-        }
-      });
+  async (error: AxiosError) => {
+    const request = error.config as RetryableRequest | undefined;
+    const isAuthRequest = request?.url?.startsWith('/auth/');
+    if (error.response?.status !== 401 || !request || request._retry || isAuthRequest) {
+      return Promise.reject(error);
     }
-    return Promise.reject(error);
-  }
-);
 
-// Bind Sync Processor to Network Restoration
-if (typeof window !== 'undefined') {
-  window.addEventListener('online', async () => {
-    await processQueue(apiClient);
-  });
-}
+    request._retry = true;
+    try {
+      const { data } = await axios.post<TokenResponse>(
+        `${baseURL}/auth/refresh`,
+        {},
+        { withCredentials: true },
+      );
+      useAuthStore.getState().setAccessToken(data.access_token);
+      request.headers.Authorization = `Bearer ${data.access_token}`;
+      return apiClient(request);
+    } catch (refreshError) {
+      useAuthStore.getState().logout();
+      return Promise.reject(refreshError);
+    }
+  },
+);

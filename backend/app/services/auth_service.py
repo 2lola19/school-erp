@@ -1,52 +1,60 @@
-from datetime import timedelta
-from typing import Tuple
+from uuid import uuid4
+
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-import redis.asyncio as redis
-from app.core.security import verify_password, create_access_token
-from app.models.core import Tenant, User, Role, RolePermission, Permission
-from app.schemas.auth import LoginCredentials, TokenResponse
+
 from app.core.config import settings
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    verify_password,
+)
+from app.models.core import Tenant, User
+from app.schemas.auth import LoginCredentials, TokenResponse
 
-async def authenticate_user(session: AsyncSession, creds: LoginCredentials) -> Tuple[User, list[str]]:
-    tenant_result = await session.execute(select(Tenant).where(Tenant.domain == creds.domain))
-    tenant = tenant_result.scalars().first()
+
+async def authenticate_user(
+    session: AsyncSession, credentials: LoginCredentials
+) -> User | None:
+    tenant = await session.scalar(
+        select(Tenant).where(Tenant.domain == credentials.domain.lower().strip())
+    )
     if not tenant:
-        return None, []
-
-    user_result = await session.execute(
-        select(User).where(User.tenant_id == tenant.id, User.email == creds.email)
+        return None
+    await session.execute(
+        text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
+        {"tenant_id": str(tenant.id)},
     )
-    user = user_result.scalars().first()
-
-    if not user or not verify_password(creds.password, user.password_hash) or not user.is_active:
-        return None, []
-
-    perm_result = await session.execute(
-        select(Permission.name)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .where(RolePermission.role_id == user.role_id)
+    user = await session.scalar(
+        select(User).where(
+            User.tenant_id == tenant.id,
+            User.email == credentials.email.lower(),
+            User.is_active.is_(True),
+        )
     )
-    permissions = list(perm_result.scalars().all())
+    if not user or not verify_password(credentials.password, user.password_hash):
+        return None
+    return user
 
-    return user, permissions
 
-async def blacklist_token(redis_client: redis.Redis, token: str) -> None:
-    ttl = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-    await redis_client.setex(f"bl_{token}", ttl, "revoked")
-
-async def generate_tokens(user, permissions: list):
-    from datetime import timedelta
-    from app.core.config import settings
-    from app.core.security import create_access_token_v2, create_refresh_token
-    from app.schemas.auth import TokenResponse
-    # Ensure permissions map to strings safely
-    if permissions and not isinstance(permissions[0], str):
-        perms = [p.name for p in permissions]
-    else:
-        perms = permissions or []
-    access_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token_v2(subject=user.id, tenant_id=user.tenant_id, role=user.role_id, permissions=perms, expires_delta=access_expires)
-    refresh_expires = timedelta(minutes=10080)
-    refresh_token = create_refresh_token(subject=str(user.id), expires_delta=refresh_expires)
-    return TokenResponse(access_token=access_token, refresh_token=refresh_token, token_type='bearer')
+def issue_tokens(user: User) -> tuple[TokenResponse, str]:
+    session_id = uuid4()
+    access_token = create_access_token(
+        subject=user.id,
+        tenant_id=user.tenant_id,
+        permission_version=user.permission_version,
+        session_id=session_id,
+    )
+    refresh_token = create_refresh_token(
+        subject=user.id,
+        tenant_id=user.tenant_id,
+        permission_version=user.permission_version,
+        session_id=session_id,
+    )
+    return (
+        TokenResponse(
+            access_token=access_token,
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        ),
+        refresh_token,
+    )

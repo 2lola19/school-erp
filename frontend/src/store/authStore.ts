@@ -1,30 +1,30 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { jwtDecode } from 'jwt-decode';
-import { TokenPayload } from '@/types/api';
+
+import type { UserContext } from '@/types/api';
 
 interface AuthState {
   accessToken: string | null;
-  refreshToken: string | null;
-  user: TokenPayload | null;
-  setTokens: (access: string, refresh: string) => void;
+  profile: UserContext | null;
+  activeWorkspaceId: string | null;
+  initialized: boolean;
+  setAccessToken: (accessToken: string) => void;
+  setProfile: (profile: UserContext) => void;
+  setActiveWorkspace: (assignmentId: string) => void;
+  setInitialized: () => void;
   logout: () => void;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      accessToken: null,
-      refreshToken: null,
-      user: null,
-      setTokens: (access, refresh) => {
-        const decoded = jwtDecode<TokenPayload>(access);
-        set({ accessToken: access, refreshToken: refresh, user: decoded });
-      },
-      logout: () => set({ accessToken: null, refreshToken: null, user: null }),
-    }),
-    {
-      name: 'auth-storage',
-    }
-  )
-);
+export const useAuthStore = create<AuthState>((set) => ({
+  accessToken: null,
+  profile: null,
+  activeWorkspaceId: null,
+  initialized: false,
+  setAccessToken: (accessToken) => set({ accessToken }),
+  setProfile: (profile) => {
+    const primary = profile.workspaces.find((workspace) => workspace.assignment_type === 'PRIMARY');
+    set({ profile, activeWorkspaceId: primary?.assignment_id ?? null });
+  },
+  setActiveWorkspace: (activeWorkspaceId) => set({ activeWorkspaceId }),
+  setInitialized: () => set({ initialized: true }),
+  logout: () => set({ accessToken: null, profile: null, activeWorkspaceId: null, initialized: true }),
+}));

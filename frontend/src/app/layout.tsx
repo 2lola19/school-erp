@@ -1,10 +1,6 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
 import Providers from './providers';
-import { SyncProvider } from '@/components/SyncProvider';
-
-const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   manifest: '/manifest.json',
@@ -22,11 +18,9 @@ export default function RootLayout({
       <head>
         <link rel="manifest" href="/manifest.json" />
       </head>
-      <body className={inter.className}>
+      <body className="font-sans">
         <Providers>
-          <SyncProvider>
-            {children}
-          </SyncProvider>
+          {children}
         </Providers>
       </body>
     </html>

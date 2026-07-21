@@ -1,42 +1,66 @@
-import bcrypt
 from datetime import datetime, timedelta, timezone
-from typing import Any, Union
+from typing import Any
+from uuid import UUID, uuid4
+
+import bcrypt
 from jose import jwt
+
 from app.core.config import settings
 
 ALGORITHM = "HS256"
 
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(
-        plain_password.encode('utf-8'), 
-        hashed_password.encode('utf-8')
-    )
+    return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
+
 
 def get_password_hash(password: str) -> str:
-    return bcrypt.hashpw(
-        password.encode('utf-8'), 
-        bcrypt.gensalt()
-    ).decode('utf-8')
-
-def create_access_token(subject: Union[str, Any], tenant_id: str, role: str, expires_delta: timedelta = None) -> str:
-    expire = datetime.now(timezone.utc) + (expires_delta if expires_delta else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode = {"exp": expire, "sub": str(subject), "tenant_id": tenant_id, "role": role}
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
-def create_access_token_v2(subject, tenant_id, role, permissions, expires_delta):
-    from datetime import datetime, timezone
-    from jose import jwt
-    from app.core.config import settings
-    expire = datetime.now(timezone.utc) + expires_delta
-    to_encode = {'exp': expire, 'sub': str(subject), 'tenant_id': str(tenant_id), 'role': str(role), 'permissions': permissions}
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
+def _create_token(
+    *,
+    subject: UUID | str,
+    tenant_id: UUID | str,
+    permission_version: int,
+    token_type: str,
+    expires_delta: timedelta,
+    session_id: UUID | str | None = None,
+) -> str:
+    now = datetime.now(timezone.utc)
+    payload: dict[str, Any] = {
+        "sub": str(subject),
+        "tenant_id": str(tenant_id),
+        "session_id": str(session_id or uuid4()),
+        "permission_version": permission_version,
+        "type": token_type,
+        "iat": now,
+        "exp": now + expires_delta,
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_refresh_token(subject, expires_delta):
-    from datetime import datetime, timezone
-    from jose import jwt
-    from app.core.config import settings
-    expire = datetime.now(timezone.utc) + expires_delta
-    to_encode = {'exp': expire, 'sub': str(subject), 'type': 'refresh'}
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
+def create_access_token(
+    *, subject: UUID | str, tenant_id: UUID | str, permission_version: int, session_id: UUID | str
+) -> str:
+    return _create_token(
+        subject=subject,
+        tenant_id=tenant_id,
+        permission_version=permission_version,
+        token_type="access",
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        session_id=session_id,
+    )
+
+
+def create_refresh_token(
+    *, subject: UUID | str, tenant_id: UUID | str, permission_version: int, session_id: UUID | str
+) -> str:
+    return _create_token(
+        subject=subject,
+        tenant_id=tenant_id,
+        permission_version=permission_version,
+        token_type="refresh",
+        expires_delta=timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        session_id=session_id,
+    )
