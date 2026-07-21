@@ -129,8 +129,27 @@ async def ensure_permission_scope(
     permission_name: str,
     required_scope: dict,
 ) -> None:
+    scopes = await get_permission_scopes(
+        session,
+        user_id=user_id,
+        tenant_id=tenant_id,
+        permission_name=permission_name,
+    )
+    if scopes is None or any(scope_contains(scope, required_scope) for scope in scopes):
+        return
+    raise HTTPException(status_code=403, detail="Permission does not cover the requested scope")
+
+
+async def get_permission_scopes(
+    session: AsyncSession,
+    *,
+    user_id: UUID,
+    tenant_id: UUID,
+    permission_name: str,
+) -> list[dict] | None:
+    """Return active role scopes, or ``None`` when the permission is tenant-wide."""
     now = datetime.now(timezone.utc)
-    result = await session.execute(
+    role_scopes = await session.execute(
         select(StaffRoleAssignment.scope)
         .join(RolePermission, RolePermission.role_id == StaffRoleAssignment.role_id)
         .join(Permission, Permission.id == RolePermission.permission_id)
@@ -145,8 +164,32 @@ async def ensure_permission_scope(
             or_(StaffRoleAssignment.ends_at.is_(None), StaffRoleAssignment.ends_at > now),
         )
     )
-    if any(scope_contains(scope or {}, required_scope) for scope in result.scalars().all()):
-        return
+    bundle_scopes = await session.execute(
+        select(StaffRoleAssignment.scope)
+        .join(
+            RolePermissionBundle,
+            RolePermissionBundle.role_id == StaffRoleAssignment.role_id,
+        )
+        .join(PermissionBundle, PermissionBundle.id == RolePermissionBundle.bundle_id)
+        .join(
+            PermissionBundlePermission,
+            PermissionBundlePermission.bundle_id == PermissionBundle.id,
+        )
+        .join(Permission, Permission.id == PermissionBundlePermission.permission_id)
+        .join(Staff, Staff.id == StaffRoleAssignment.staff_id)
+        .where(
+            Staff.user_id == user_id,
+            Staff.tenant_id == tenant_id,
+            StaffRoleAssignment.tenant_id == tenant_id,
+            PermissionBundle.tenant_id == tenant_id,
+            PermissionBundle.is_active.is_(True),
+            Permission.name == permission_name,
+            StaffRoleAssignment.status == "ACTIVE",
+            or_(StaffRoleAssignment.starts_at.is_(None), StaffRoleAssignment.starts_at <= now),
+            or_(StaffRoleAssignment.ends_at.is_(None), StaffRoleAssignment.ends_at > now),
+        )
+    )
+    scopes = list(role_scopes.scalars().all()) + list(bundle_scopes.scalars().all())
 
     direct_allow = await session.scalar(
         select(UserPermission.id)
@@ -160,8 +203,9 @@ async def ensure_permission_scope(
             or_(UserPermission.expires_at.is_(None), UserPermission.expires_at > now),
         )
     )
-    if not direct_allow:
-        raise HTTPException(status_code=403, detail="Permission does not cover the requested scope")
+    if direct_allow or any(not scope for scope in scopes):
+        return None
+    return [scope for scope in scopes if scope]
 
 
 def active_assignment_predicates(now: datetime | None = None) -> tuple:

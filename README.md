@@ -15,9 +15,12 @@ operations, and auditable multi-role staff authorization.
 - Role conflicts, category limits, delegation rules, and dual-control approval.
 - Append-only audit records for role and protected academic changes.
 - Short-lived access tokens in memory and rotating refresh tokens in HTTP-only cookies.
+- Admissions, attendance, timetables, examinations, and published report-card workflows.
 
 See [docs/authorization-architecture.md](docs/authorization-architecture.md) for
 the detailed model and endpoint map.
+See [docs/academic-operations.md](docs/academic-operations.md) for the academic
+administration workflows.
 
 ## Local setup
 

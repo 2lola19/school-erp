@@ -35,6 +35,9 @@ def main() -> None:
             "/api/v1/auth/me",
             "/api/v1/staff/{staff_id}/roles/secondary",
             "/api/v1/academic/grades/{grade_id}/approve",
+            "/api/v1/academic-admin/sessions",
+            "/api/v1/academic-admin/attendance/{attendance_id}/approve",
+            "/api/v1/academic-admin/report-cards/{report_card_id}/publish",
         ):
             assert expected in paths
 

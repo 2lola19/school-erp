@@ -14,6 +14,7 @@ from app.db.session import AsyncSessionLocal
 from app.main import app
 from app.models.core import (
     Classroom,
+    Enrollment,
     Permission,
     Role,
     RolePermission,
@@ -21,6 +22,7 @@ from app.models.core import (
     StaffRoleAssignment,
     Student,
     Subject,
+    Teacher,
     Tenant,
     User,
     UserPermission,
@@ -127,6 +129,17 @@ async def _seed_authorization_scenario() -> dict[str, object]:
     domain_b = f"beta-{suffix}.test"
     shared_email = f"admin-{suffix}@example.com"
     permission_names = {
+        "academic.setup.manage",
+        "academic.setup.read",
+        "admissions.approve",
+        "admissions.create",
+        "admissions.read",
+        "attendance.approve",
+        "attendance.correct",
+        "attendance.mark",
+        "attendance.read",
+        "examinations.manage",
+        "examinations.read",
         "roles.assign",
         "roles.assign.any",
         "roles.approve",
@@ -137,6 +150,12 @@ async def _seed_authorization_scenario() -> dict[str, object]:
         "staff.read",
         "students.create",
         "students.read",
+        "report_cards.approve",
+        "report_cards.generate",
+        "report_cards.publish",
+        "report_cards.read",
+        "timetable.manage",
+        "timetable.read",
     }
 
     async with AsyncSessionLocal() as session:
@@ -162,6 +181,13 @@ async def _seed_authorization_scenario() -> dict[str, object]:
             )
             session.add_all([subject, classroom, other_classroom, student_a])
             await session.flush()
+            session.add(
+                Enrollment(
+                    tenant_id=tenant_a.id,
+                    student_id=student_a.id,
+                    classroom_id=classroom.id,
+                )
+            )
 
             admin_role = await _add_role(
                 session,
@@ -170,6 +196,15 @@ async def _seed_authorization_scenario() -> dict[str, object]:
                 code=f"ADMIN_{suffix}",
                 permissions=permissions,
                 permission_names={
+                    "academic.setup.manage",
+                    "academic.setup.read",
+                    "admissions.approve",
+                    "admissions.create",
+                    "admissions.read",
+                    "attendance.correct",
+                    "attendance.read",
+                    "examinations.manage",
+                    "examinations.read",
                     "roles.assign",
                     "roles.assign.any",
                     "roles.approve",
@@ -177,6 +212,11 @@ async def _seed_authorization_scenario() -> dict[str, object]:
                     "staff.read",
                     "students.create",
                     "students.read",
+                    "report_cards.generate",
+                    "report_cards.publish",
+                    "report_cards.read",
+                    "timetable.manage",
+                    "timetable.read",
                 },
             )
             teacher_role = await _add_role(
@@ -190,6 +230,9 @@ async def _seed_authorization_scenario() -> dict[str, object]:
                     "scores.submit",
                     "scores.approve",
                     "students.read",
+                    "attendance.mark",
+                    "attendance.read",
+                    "timetable.read",
                 },
             )
             approver_role = await _add_role(
@@ -198,7 +241,12 @@ async def _seed_authorization_scenario() -> dict[str, object]:
                 name="Integration Approver",
                 code=f"APPROVER_{suffix}",
                 permissions=permissions,
-                permission_names={"roles.approve", "scores.approve"},
+                permission_names={
+                    "attendance.approve",
+                    "report_cards.approve",
+                    "roles.approve",
+                    "scores.approve",
+                },
             )
             observer_role = await _add_role(
                 session,
@@ -273,6 +321,15 @@ async def _seed_authorization_scenario() -> dict[str, object]:
                     approved_at=datetime.now(timezone.utc),
                 )
             )
+            teacher = Teacher(
+                tenant_id=tenant_a.id,
+                staff_id=teacher_staff.id,
+                first_name="Integration",
+                last_name="Teacher",
+                email=teacher_user.email,
+                employee_id=f"TEACHER-{suffix}",
+            )
+            session.add(teacher)
             await session.flush()
 
             await session.execute(
@@ -316,6 +373,7 @@ async def _seed_authorization_scenario() -> dict[str, object]:
         "observer_email": observer_user.email,
         "observer_password": "Observer-integration-password",
         "teacher_staff_id": teacher_staff.id,
+        "teacher_id": teacher.id,
         "observer_staff_id": observer_staff.id,
         "sensitive_role_id": sensitive_role.id,
         "secondary_role_ids": [role.id for role in secondary_roles],
@@ -529,6 +587,212 @@ async def test_tenant_roles_sessions_and_grade_approval_end_to_end() -> None:
             )
             assert approved_grade.status_code == 200, approved_grade.text
             assert approved_grade.json()["workflow_status"] == "APPROVED"
+
+            academic_session = await admin_client.post(
+                "/api/v1/academic-admin/sessions",
+                headers=admin_headers,
+                json={
+                    "name": "2026/2027",
+                    "starts_on": "2026-09-01",
+                    "ends_on": "2027-07-31",
+                },
+            )
+            assert academic_session.status_code == 201, academic_session.text
+            session_id = academic_session.json()["id"]
+            activated = await admin_client.post(
+                f"/api/v1/academic-admin/sessions/{session_id}/activate",
+                headers=admin_headers,
+                json={"reason": "Start the integration academic year"},
+            )
+            assert activated.status_code == 200
+            assert activated.json()["status"] == "ACTIVE"
+
+            term = await admin_client.post(
+                "/api/v1/academic-admin/terms",
+                headers=admin_headers,
+                json={
+                    "session_id": session_id,
+                    "name": "First",
+                    "starts_on": "2026-09-01",
+                    "ends_on": "2026-12-20",
+                },
+            )
+            assert term.status_code == 201, term.text
+            term_id = term.json()["id"]
+
+            application_number = f"APP-{uuid4().hex[:8]}"
+            applicant = await admin_client.post(
+                "/api/v1/academic-admin/applicants",
+                headers=admin_headers,
+                json={
+                    "application_number": application_number,
+                    "first_name": "New",
+                    "last_name": "Applicant",
+                    "date_of_birth": "2015-03-02",
+                    "guardian": {
+                        "first_name": "Primary",
+                        "last_name": "Guardian",
+                        "email": f"guardian-{uuid4().hex[:8]}@example.com",
+                        "phone": "+2348000000000",
+                        "relationship": "Parent",
+                    },
+                },
+            )
+            assert applicant.status_code == 201, applicant.text
+            admission = await admin_client.post(
+                f"/api/v1/academic-admin/applicants/{applicant.json()['id']}/decision",
+                headers=admin_headers,
+                json={
+                    "decision": "ADMIT",
+                    "reason": "Applicant met the published criteria",
+                    "admission_number": f"NEW-{uuid4().hex[:8]}",
+                    "classroom_id": str(scenario["classroom_id"]),
+                },
+            )
+            assert admission.status_code == 200, admission.text
+            assert admission.json()["status"] == "ADMITTED"
+            assert admission.json()["admitted_student_id"]
+
+            exam_cycle = await admin_client.post(
+                "/api/v1/academic-admin/exam-cycles",
+                headers=admin_headers,
+                json={
+                    "term_id": term_id,
+                    "name": "First Term Examination",
+                    "opens_at": "2026-11-01T08:00:00Z",
+                    "closes_at": "2026-12-10T17:00:00Z",
+                },
+            )
+            assert exam_cycle.status_code == 201, exam_cycle.text
+            cycle_id = exam_cycle.json()["id"]
+            component = await admin_client.post(
+                "/api/v1/academic-admin/assessment-components",
+                headers=admin_headers,
+                json={
+                    "exam_cycle_id": cycle_id,
+                    "classroom_id": str(scenario["classroom_id"]),
+                    "subject_id": str(scenario["subject_id"]),
+                    "name": "Examination",
+                    "maximum_score": 100,
+                    "weight": 100,
+                },
+            )
+            assert component.status_code == 201, component.text
+            for action_name, expected_status in (
+                ("OPEN", "OPEN"),
+                ("CLOSE", "CLOSED"),
+                ("PUBLISH", "PUBLISHED"),
+            ):
+                transitioned = await admin_client.post(
+                    f"/api/v1/academic-admin/exam-cycles/{cycle_id}/transition",
+                    headers=admin_headers,
+                    json={
+                        "action": action_name,
+                        "reason": f"Move examination cycle to {expected_status}",
+                    },
+                )
+                assert transitioned.status_code == 200, transitioned.text
+                assert transitioned.json()["status"] == expected_status
+
+            timetable = await admin_client.post(
+                "/api/v1/academic-admin/timetable",
+                headers=admin_headers,
+                json={
+                    "term_id": term_id,
+                    "classroom_id": str(scenario["classroom_id"]),
+                    "subject_id": str(scenario["subject_id"]),
+                    "teacher_id": str(scenario["teacher_id"]),
+                    "weekday": 1,
+                    "period_label": "P1",
+                    "starts_at": "08:00:00",
+                    "ends_at": "08:45:00",
+                },
+            )
+            assert timetable.status_code == 201, timetable.text
+
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as attendance_client:
+                attendance_token = await _login(
+                    attendance_client,
+                    domain=str(scenario["domain_a"]),
+                    email=str(scenario["teacher_email"]),
+                    password=str(scenario["teacher_password"]),
+                )
+                scoped_timetable = await attendance_client.get(
+                    f"/api/v1/academic-admin/timetable?term_id={term_id}",
+                    headers=_bearer(attendance_token),
+                )
+                assert scoped_timetable.status_code == 200, scoped_timetable.text
+                assert [entry["id"] for entry in scoped_timetable.json()] == [
+                    timetable.json()["id"]
+                ]
+                marked = await attendance_client.post(
+                    "/api/v1/academic-admin/attendance",
+                    headers=_bearer(attendance_token),
+                    json={
+                        "student_id": str(scenario["student_a_id"]),
+                        "classroom_id": str(scenario["classroom_id"]),
+                        "date": "2026-09-15",
+                        "status": "PRESENT",
+                    },
+                )
+                assert marked.status_code == 201, marked.text
+                attendance_id = marked.json()["id"]
+                submitted_attendance = await attendance_client.post(
+                    f"/api/v1/academic-admin/attendance/{attendance_id}/submit",
+                    headers=_bearer(attendance_token),
+                    json={"reason": "Daily register complete"},
+                )
+                assert submitted_attendance.status_code == 200
+                assert submitted_attendance.json()["workflow_status"] == "SUBMITTED"
+                scoped_attendance = await attendance_client.get(
+                    "/api/v1/academic-admin/attendance",
+                    headers=_bearer(attendance_token),
+                )
+                assert scoped_attendance.status_code == 200, scoped_attendance.text
+                assert [entry["id"] for entry in scoped_attendance.json()] == [attendance_id]
+                outside_scope = await attendance_client.get(
+                    "/api/v1/academic-admin/attendance",
+                    headers=_bearer(attendance_token),
+                    params={"classroom_id": str(scenario["other_classroom_id"])},
+                )
+                assert outside_scope.status_code == 403
+
+            approved_attendance = await approver_client.post(
+                f"/api/v1/academic-admin/attendance/{attendance_id}/approve",
+                headers=_bearer(approver_token),
+                json={"reason": "Register independently checked"},
+            )
+            assert approved_attendance.status_code == 200, approved_attendance.text
+            assert approved_attendance.json()["workflow_status"] == "APPROVED"
+
+            generated_report = await admin_client.post(
+                "/api/v1/academic-admin/report-cards",
+                headers=admin_headers,
+                json={
+                    "student_id": str(scenario["student_a_id"]),
+                    "term_id": term_id,
+                    "classroom_id": str(scenario["classroom_id"]),
+                    "remarks": "Consistent academic progress",
+                },
+            )
+            assert generated_report.status_code == 201, generated_report.text
+            report_id = generated_report.json()["id"]
+            assert generated_report.json()["entries"][0]["score"] == 88
+            approved_report = await approver_client.post(
+                f"/api/v1/academic-admin/report-cards/{report_id}/approve",
+                headers=_bearer(approver_token),
+                json={"reason": "Results and remarks independently reviewed"},
+            )
+            assert approved_report.status_code == 200, approved_report.text
+            published_report = await admin_client.post(
+                f"/api/v1/academic-admin/report-cards/{report_id}/publish",
+                headers=admin_headers,
+                json={"reason": "Release approved first-term report"},
+            )
+            assert published_report.status_code == 200, published_report.text
+            assert published_report.json()["status"] == "PUBLISHED"
 
         async with AsyncClient(transport=transport, base_url="http://testserver") as beta_client:
             beta_token = await _login(
