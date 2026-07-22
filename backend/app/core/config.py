@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     SQLALCHEMY_DATABASE_URI: str = (
         "postgresql+asyncpg://school:school@localhost:5432/school_erp"
     )
+    DB_USE_NULL_POOL: bool = False
     SECRET_KEY: str = Field(min_length=32)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -30,7 +31,9 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        return [
+            origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()
+        ]
 
 
 @lru_cache

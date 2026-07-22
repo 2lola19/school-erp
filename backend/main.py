@@ -6,5 +6,6 @@ import os
 # so they must include that external prefix even though FastAPI does not see it.
 os.environ.setdefault("REFRESH_COOKIE_PATH", "/backend/api/v1/auth")
 os.environ.setdefault("SECURE_COOKIES", "true")
+os.environ.setdefault("DB_USE_NULL_POOL", "true")
 
 from app.main import app  # noqa: E402, F401
