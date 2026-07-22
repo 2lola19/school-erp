@@ -23,7 +23,7 @@ def set_refresh_cookie(response: Response, token: str) -> None:
         secure=settings.SECURE_COOKIES,
         samesite="lax",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-        path=f"{settings.API_V1_STR}/auth",
+        path=settings.REFRESH_COOKIE_PATH,
     )
 
 
@@ -134,6 +134,6 @@ async def logout(
                 settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
                 "1",
             )
-    response.delete_cookie(REFRESH_COOKIE, path=f"{settings.API_V1_STR}/auth")
+    response.delete_cookie(REFRESH_COOKIE, path=settings.REFRESH_COOKIE_PATH)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
