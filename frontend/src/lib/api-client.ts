@@ -3,7 +3,9 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/store/authStore';
 import type { TokenResponse } from '@/types/api';
 
-const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const backendURL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const baseURL =
+  process.env.NEXT_PUBLIC_API_URL || `${backendURL.replace(/\/$/, '')}/api/v1`;
 
 export const apiClient = axios.create({
   baseURL,

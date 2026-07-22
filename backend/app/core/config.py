@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
     SECURE_COOKIES: bool = False
+    REFRESH_COOKIE_PATH: str = "/api/v1/auth"
     PAYSTACK_SECRET_KEY: str | None = None
     FLUTTERWAVE_SECRET_HASH: str | None = None
     BILLING_WEBHOOK_MAX_ATTEMPTS: int = 5
