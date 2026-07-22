@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.dependencies import get_redis, get_rls_db, require_permissions
+from app.api.v1.dependencies import get_redis, get_rls_db, require_access, require_permissions
+from app.core.feature_registry import FeatureCode
 from app.models.core import RoleConflict, Staff, StaffRoleAssignment, User
 from app.schemas.auth import CurrentUser
 from app.schemas.roles import (
@@ -22,6 +23,7 @@ from app.schemas.roles import (
     StaffResponse,
 )
 from app.services.access_control import get_effective_permissions
+from app.services.entitlements import EntitlementService
 from app.services.roles import (
     assign_role,
     create_staff_with_primary_role,
@@ -36,10 +38,14 @@ router = APIRouter()
 @router.post("/", response_model=StaffResponse, status_code=status.HTTP_201_CREATED)
 async def create_staff(
     payload: StaffCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("staff.create", "roles.assign"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.STAFF_MANAGE, "staff.create", "roles.assign"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
     redis_client: Annotated[redis.Redis, Depends(get_redis)],
 ) -> Staff:
+    await EntitlementService(session, redis_client).check_quota(
+        actor.tenant_id,
+        FeatureCode.QUOTA_ACTIVE_STAFF,
+    )
     staff = await create_staff_with_primary_role(session, redis_client, actor, payload)
     await session.commit()
     await session.refresh(staff)

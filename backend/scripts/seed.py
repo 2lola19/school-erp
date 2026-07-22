@@ -13,6 +13,7 @@ from sqlalchemy import select, text
 from app.core.security import get_password_hash
 from app.db.session import AsyncSessionLocal
 from app.models.core import Permission, Role, RolePermission, Staff, StaffRoleAssignment, Tenant, User
+from app.models.subscriptions import SubscriptionChangeHistory, SubscriptionPlan, TenantSubscription
 
 PLATFORM_PERMISSIONS = {
     "tenants.read",
@@ -24,6 +25,15 @@ PLATFORM_PERMISSIONS = {
     "roles.approve",
     "roles.revoke",
     "audit_logs.read",
+    "subscriptions.read",
+    "subscriptions.manage",
+    "plans.read",
+    "plans.manage",
+    "add_ons.manage",
+    "tenant_entitlements.read",
+    "tenant_entitlements.override",
+    "billing.read",
+    "billing.manage",
 }
 
 
@@ -43,9 +53,38 @@ async def seed() -> None:
             text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
             {"tenant_id": str(tenant.id)},
         )
+        current_subscription = await session.scalar(
+            select(TenantSubscription).where(
+                TenantSubscription.tenant_id == tenant.id,
+                TenantSubscription.is_current.is_(True),
+            )
+        )
+        if current_subscription is None:
+            plan = await session.scalar(
+                select(SubscriptionPlan).where(SubscriptionPlan.code == "ENTERPRISE_PLUS")
+            )
+            if plan is None:
+                raise SystemExit("Run scripts.seed_subscriptions before bootstrapping the platform administrator")
+            current_subscription = TenantSubscription(
+                tenant_id=tenant.id,
+                plan_id=plan.id,
+                status="ACTIVE",
+                is_current=True,
+            )
+            session.add(current_subscription)
+            session.add(
+                SubscriptionChangeHistory(
+                    tenant_id=tenant.id,
+                    old_plan_id=None,
+                    new_plan_id=plan.id,
+                    change_type="CREATED",
+                    reason="Platform bootstrap subscription",
+                )
+            )
         if await session.scalar(
             select(User).where(User.tenant_id == tenant.id, User.email == email)
         ):
+            await session.commit()
             print("Platform administrator already exists")
             return
 

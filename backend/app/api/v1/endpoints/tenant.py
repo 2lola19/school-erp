@@ -1,4 +1,5 @@
 from typing import Annotated
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -18,6 +19,7 @@ from app.models.core import (
     Tenant,
     User,
 )
+from app.models.subscriptions import SubscriptionChangeHistory, SubscriptionPlan, TenantSubscription
 from app.schemas.auth import CurrentUser
 from app.services.role_templates import (
     SCHOOL_ADMIN_PERMISSIONS,
@@ -74,6 +76,36 @@ async def create_tenant(
         {"tenant_id": str(tenant.id)},
     )
     await ensure_tenant_role_templates(session, tenant.id)
+    starter = await session.scalar(
+        select(SubscriptionPlan).where(
+            SubscriptionPlan.code == "STARTER",
+            SubscriptionPlan.is_active.is_(True),
+        )
+    )
+    if starter is None:
+        raise HTTPException(status_code=503, detail="Subscription catalog has not been seeded")
+    now = datetime.now(timezone.utc)
+    subscription = TenantSubscription(
+        tenant_id=tenant.id,
+        plan_id=starter.id,
+        status="TRIALING" if starter.trial_days else "ACTIVE",
+        starts_at=now,
+        trial_ends_at=now + timedelta(days=starter.trial_days) if starter.trial_days else None,
+        current_period_start=now,
+        entitlement_version=1,
+    )
+    session.add(subscription)
+    session.add(
+        SubscriptionChangeHistory(
+            tenant_id=tenant.id,
+            old_plan_id=None,
+            new_plan_id=starter.id,
+            change_type="TRIAL_STARTED" if starter.trial_days else "CREATED",
+            effective_at=now,
+            changed_by=actor.id,
+            reason="Default subscription assigned during tenant creation",
+        )
+    )
     await session.commit()
     await session.refresh(tenant)
     return tenant

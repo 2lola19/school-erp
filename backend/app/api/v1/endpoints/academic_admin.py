@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.dependencies import get_rls_db, require_permissions
+from app.api.v1.dependencies import get_rls_db, require_access
+from app.core.feature_registry import FeatureCode
 from app.models.core import (
     AcademicSession,
     AcademicTerm,
@@ -109,7 +110,7 @@ def _scoped_filter(model: type, scopes: list[dict], fields: tuple[str, ...]):
 @router.post("/sessions", response_model=AcademicSessionResponse, status_code=201)
 async def create_session(
     payload: AcademicSessionCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("academic.setup.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.CLASSES_MANAGE, "academic.setup.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> AcademicSession:
     academic_session = AcademicSession(tenant_id=actor.tenant_id, **payload.model_dump())
@@ -130,7 +131,7 @@ async def create_session(
 
 @router.get("/sessions", response_model=list[AcademicSessionResponse])
 async def list_sessions(
-    actor: Annotated[CurrentUser, Depends(require_permissions("academic.setup.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.CLASSES_MANAGE, "academic.setup.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> list[AcademicSession]:
     result = await session.execute(
@@ -145,7 +146,7 @@ async def list_sessions(
 async def activate_session(
     session_id: UUID,
     action: WorkflowAction,
-    actor: Annotated[CurrentUser, Depends(require_permissions("academic.setup.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.CLASSES_MANAGE, "academic.setup.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> AcademicSession:
     target = await session.scalar(
@@ -187,7 +188,7 @@ async def activate_session(
 @router.post("/terms", response_model=AcademicTermResponse, status_code=201)
 async def create_term(
     payload: AcademicTermCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("academic.setup.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.CLASSES_MANAGE, "academic.setup.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> AcademicTerm:
     academic_session = await _tenant_entity(
@@ -213,7 +214,7 @@ async def create_term(
 
 @router.get("/terms", response_model=list[AcademicTermResponse])
 async def list_terms(
-    actor: Annotated[CurrentUser, Depends(require_permissions("academic.setup.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.CLASSES_MANAGE, "academic.setup.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
     session_id: UUID | None = None,
 ) -> list[AcademicTerm]:
@@ -227,7 +228,7 @@ async def list_terms(
 @router.post("/applicants", response_model=ApplicantResponse, status_code=201)
 async def create_applicant(
     payload: ApplicantCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("admissions.create"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.ADMISSIONS_MANAGE, "admissions.create"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Applicant:
     existing = await session.scalar(
@@ -281,7 +282,7 @@ async def create_applicant(
 
 @router.get("/applicants", response_model=list[ApplicantResponse])
 async def list_applicants(
-    actor: Annotated[CurrentUser, Depends(require_permissions("admissions.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.ADMISSIONS_MANAGE, "admissions.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
     application_status: Annotated[str | None, Query(alias="status")] = None,
 ) -> list[Applicant]:
@@ -296,7 +297,7 @@ async def list_applicants(
 async def decide_applicant(
     applicant_id: UUID,
     payload: ApplicantDecision,
-    actor: Annotated[CurrentUser, Depends(require_permissions("admissions.approve"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.ADMISSIONS_MANAGE, "admissions.approve"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Applicant:
     applicant = await session.scalar(
@@ -373,7 +374,7 @@ async def decide_applicant(
 @router.post("/attendance", response_model=AttendanceResponse, status_code=201)
 async def mark_attendance(
     payload: AttendanceMark,
-    actor: Annotated[CurrentUser, Depends(require_permissions("attendance.mark"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.ATTENDANCE_MANAGE, "attendance.mark"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Attendance:
     await ensure_permission_scope(
@@ -420,7 +421,7 @@ async def mark_attendance(
 
 @router.get("/attendance", response_model=list[AttendanceResponse])
 async def list_attendance(
-    actor: Annotated[CurrentUser, Depends(require_permissions("attendance.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.ATTENDANCE_MANAGE, "attendance.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
     classroom_id: UUID | None = None,
     attendance_date: Annotated[date | None, Query(alias="date")] = None,
@@ -453,7 +454,7 @@ async def list_attendance(
 async def correct_attendance(
     attendance_id: UUID,
     payload: AttendanceCorrection,
-    actor: Annotated[CurrentUser, Depends(require_permissions("attendance.correct"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.ATTENDANCE_MANAGE, "attendance.correct"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Attendance:
     attendance = await session.scalar(
@@ -494,7 +495,7 @@ async def correct_attendance(
 async def submit_attendance(
     attendance_id: UUID,
     action: WorkflowAction,
-    actor: Annotated[CurrentUser, Depends(require_permissions("attendance.mark"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.ATTENDANCE_MANAGE, "attendance.mark"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Attendance:
     attendance = await session.scalar(
@@ -527,7 +528,7 @@ async def submit_attendance(
 async def approve_attendance(
     attendance_id: UUID,
     action: WorkflowAction,
-    actor: Annotated[CurrentUser, Depends(require_permissions("attendance.approve"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.ATTENDANCE_MANAGE, "attendance.approve"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Attendance:
     attendance = await session.scalar(
@@ -560,7 +561,7 @@ async def approve_attendance(
 @router.post("/timetable", response_model=TimetableEntryResponse, status_code=201)
 async def create_timetable_entry(
     payload: TimetableEntryCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("timetable.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.TIMETABLE_MANAGE, "timetable.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> TimetableEntry:
     for model, entity_id, label in (
@@ -600,7 +601,7 @@ async def create_timetable_entry(
 
 @router.get("/timetable", response_model=list[TimetableEntryResponse])
 async def list_timetable(
-    actor: Annotated[CurrentUser, Depends(require_permissions("timetable.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.TIMETABLE_MANAGE, "timetable.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
     term_id: UUID,
     classroom_id: UUID | None = None,
@@ -637,7 +638,7 @@ async def list_timetable(
 @router.post("/exam-cycles", response_model=ExamCycleResponse, status_code=201)
 async def create_exam_cycle(
     payload: ExamCycleCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("examinations.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.RESULTS_MANAGE, "examinations.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> ExamCycle:
     await _tenant_entity(session, AcademicTerm, payload.term_id, actor.tenant_id, "Term")
@@ -659,7 +660,7 @@ async def create_exam_cycle(
 
 @router.get("/exam-cycles", response_model=list[ExamCycleResponse])
 async def list_exam_cycles(
-    actor: Annotated[CurrentUser, Depends(require_permissions("examinations.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.RESULTS_MANAGE, "examinations.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
     term_id: UUID | None = None,
 ) -> list[ExamCycle]:
@@ -674,7 +675,7 @@ async def list_exam_cycles(
 async def transition_exam_cycle(
     cycle_id: UUID,
     payload: ExamCycleAction,
-    actor: Annotated[CurrentUser, Depends(require_permissions("examinations.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.RESULTS_MANAGE, "examinations.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> ExamCycle:
     cycle = await session.scalar(
@@ -714,7 +715,7 @@ async def transition_exam_cycle(
 )
 async def create_assessment_component(
     payload: AssessmentComponentCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("examinations.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.RESULTS_MANAGE, "examinations.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> AssessmentComponent:
     await _tenant_entity(
@@ -793,7 +794,7 @@ async def _report_response(
 @router.post("/report-cards", response_model=ReportCardResponse, status_code=201)
 async def generate_report_card(
     payload: ReportCardGenerate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("report_cards.generate"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.RESULTS_MANAGE, "report_cards.generate"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> ReportCardResponse:
     student = await _tenant_entity(
@@ -875,11 +876,10 @@ async def generate_report_card(
     await session.refresh(report)
     return await _report_response(session, report)
 
-
 @router.get("/report-cards/{report_id}", response_model=ReportCardResponse)
 async def get_report_card(
     report_id: UUID,
-    actor: Annotated[CurrentUser, Depends(require_permissions("report_cards.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.RESULTS_MANAGE, "report_cards.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> ReportCardResponse:
     report = await session.scalar(
@@ -903,7 +903,7 @@ async def get_report_card(
 async def approve_report_card(
     report_id: UUID,
     action: WorkflowAction,
-    actor: Annotated[CurrentUser, Depends(require_permissions("report_cards.approve"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.RESULTS_MANAGE, "report_cards.approve"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> ReportCardResponse:
     report = await session.scalar(
@@ -937,7 +937,7 @@ async def approve_report_card(
 async def publish_report_card(
     report_id: UUID,
     action: WorkflowAction,
-    actor: Annotated[CurrentUser, Depends(require_permissions("report_cards.publish"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.RESULTS_PUBLISH, "report_cards.publish"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> ReportCardResponse:
     report = await session.scalar(

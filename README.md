@@ -18,6 +18,8 @@ operations, school services, and auditable multi-role staff authorization.
 - Admissions, attendance, timetables, examinations, and published report-card workflows.
 - Dual-controlled finance, isolated health and counselling records, and audited break-glass access.
 - Library, transport, hostel, and extracurricular workflows with capacity and approval controls.
+- Database-driven plans, feature entitlements, quotas, add-ons, overrides, status controls, and provider-neutral billing.
+- Forced tenant RLS validated under a non-superuser role; plan access and user RBAC must both pass.
 
 See [docs/authorization-architecture.md](docs/authorization-architecture.md) for
 the detailed model and endpoint map.
@@ -25,6 +27,8 @@ See [docs/academic-operations.md](docs/academic-operations.md) for the academic
 administration workflows.
 See [docs/school-services.md](docs/school-services.md) for finance, welfare, and
 student-life service boundaries.
+See [docs/subscription-entitlements.md](docs/subscription-entitlements.md) for
+plan, quota, add-on, downgrade, webhook, and administration behavior.
 
 ## Local setup
 
@@ -45,6 +49,11 @@ student-life service boundaries.
    ```
 
 4. Sign in at `http://localhost:3001/login` using domain `platform.local`.
+
+Startup applies migrations, seeds the subscription catalog idempotently, and
+synchronizes built-in role templates before serving requests. Configure actual
+plan prices before offering paid upgrades; seeded prices intentionally default
+to zero.
 
 The API is available at `http://localhost:8000`, with health status at `/healthz`.
 

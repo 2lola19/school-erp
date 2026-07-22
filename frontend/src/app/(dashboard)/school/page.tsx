@@ -6,8 +6,11 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
+import { FeatureGate } from '@/components/entitlements/FeatureGate';
+import { useEntitlements } from '@/components/entitlements/EntitlementProvider';
 import { apiClient } from '@/lib/api-client';
 import { useAuthStore } from '@/store/authStore';
+import { FeatureCode } from '@/types/subscriptions';
 
 type DirectoryItem = { id: string; first_name?: string; last_name?: string; name?: string; admission_number?: string };
 
@@ -18,6 +21,7 @@ export default function SchoolDashboard() {
   const [teachers, setTeachers] = useState<DirectoryItem[]>([]);
   const [classrooms, setClassrooms] = useState<DirectoryItem[]>([]);
   const [error, setError] = useState('');
+  const { entitlements, hasFeature } = useEntitlements();
 
   const activeWorkspace = useMemo(
     () => profile?.workspaces.find((workspace) => workspace.assignment_id === activeWorkspaceId),
@@ -30,14 +34,14 @@ export default function SchoolDashboard() {
   }, [initialized, profile, router]);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || !entitlements) return;
     const permissions = new Set(profile.permissions);
     async function loadDirectory() {
       try {
         const [studentData, teacherData, classroomData] = await Promise.all([
-          permissions.has('students.read') ? apiClient.get('/students/') : Promise.resolve({ data: [] }),
-          permissions.has('staff.read') ? apiClient.get('/academic/teachers') : Promise.resolve({ data: [] }),
-          permissions.has('classes.read') ? apiClient.get('/academic/classrooms') : Promise.resolve({ data: [] }),
+          permissions.has('students.read') && hasFeature(FeatureCode.STUDENTS_MANAGE) ? apiClient.get('/students/') : Promise.resolve({ data: [] }),
+          permissions.has('staff.read') && hasFeature(FeatureCode.STAFF_MANAGE) ? apiClient.get('/academic/teachers') : Promise.resolve({ data: [] }),
+          permissions.has('classes.read') && hasFeature(FeatureCode.CLASSES_MANAGE) ? apiClient.get('/academic/classrooms') : Promise.resolve({ data: [] }),
         ]);
         setStudents(studentData.data);
         setTeachers(teacherData.data);
@@ -47,7 +51,7 @@ export default function SchoolDashboard() {
       }
     }
     loadDirectory();
-  }, [profile]);
+  }, [entitlements, hasFeature, profile]);
 
   const handleLogout = async () => {
     try { await apiClient.post('/auth/logout'); } finally {
@@ -88,9 +92,9 @@ export default function SchoolDashboard() {
         {error && <p role="alert" className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">{error}</p>}
 
         <section className="grid gap-4 md:grid-cols-3">
-          {can('students.read') && <Metric title="Students" value={students.length} />}
-          {can('staff.read') && <Metric title="Teachers" value={teachers.length} />}
-          {can('classes.read') && <Metric title="Classrooms" value={classrooms.length} />}
+          {can('students.read') && <FeatureGate feature={FeatureCode.STUDENTS_MANAGE} hide><Metric title="Students" value={students.length} /></FeatureGate>}
+          {can('staff.read') && <FeatureGate feature={FeatureCode.STAFF_MANAGE} hide><Metric title="Teachers" value={teachers.length} /></FeatureGate>}
+          {can('classes.read') && <FeatureGate feature={FeatureCode.CLASSES_MANAGE} hide><Metric title="Classrooms" value={classrooms.length} /></FeatureGate>}
         </section>
 
         {profile.permissions.some((permission) =>
@@ -131,6 +135,11 @@ export default function SchoolDashboard() {
             </CardContent>
           </Card>
         )}
+
+        <Card>
+          <CardHeader><CardTitle>Subscription and billing</CardTitle><CardDescription>Plan status, quota usage, add-ons, renewal, and billing history.</CardDescription></CardHeader>
+          <CardContent><Button onClick={() => router.push('/school/billing')}>Manage subscription</Button></CardContent>
+        </Card>
 
         <Card>
           <CardHeader><CardTitle>Available modules</CardTitle><CardDescription>Modules are derived from effective permissions, including secondary roles and explicit restrictions.</CardDescription></CardHeader>

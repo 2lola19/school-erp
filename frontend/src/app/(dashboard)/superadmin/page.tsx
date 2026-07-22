@@ -70,6 +70,7 @@ export default function SuperAdminDashboard() {
           <div className="flex items-center gap-3"><WorkspaceSwitcher /><Button variant="outline" onClick={handleLogout}>Sign out</Button></div>
         </header>
         {error && <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700">{error}</p>}
+        {profile.permissions.includes('plans.read') && <Card><CardHeader><CardTitle>Subscription control</CardTitle></CardHeader><CardContent><Button onClick={() => router.push('/superadmin/subscriptions')}>Manage plans and tenant subscriptions</Button></CardContent></Card>}
         <Card>
           <CardHeader><CardTitle>Provision institution</CardTitle></CardHeader>
           <CardContent>

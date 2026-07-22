@@ -7,6 +7,7 @@ from alembic import context
 from app.core.config import settings
 from app.db.base_class import Base
 from app.models import core  # noqa: F401
+from app.models import subscriptions  # noqa: F401
 
 config = context.config
 

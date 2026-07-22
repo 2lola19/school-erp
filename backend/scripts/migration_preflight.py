@@ -11,6 +11,8 @@ SAFE_REVISIONS = {
     "0001_initial_schema",
     "0002_academic_operations",
     "0003_school_services",
+    "0004_subscription_entitlements",
+    "0005_correct_rls_policies",
 }
 MANAGED_TABLES = {
     "attendance",

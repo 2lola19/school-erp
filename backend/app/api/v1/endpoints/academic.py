@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.dependencies import get_redis, get_rls_db, require_permissions
+from app.api.v1.dependencies import get_redis, get_rls_db, require_access, require_permissions
+from app.core.feature_registry import FeatureCode
 from app.models.core import AuditLog, Classroom, Grade, Student, Subject, Teacher
 from app.schemas.academic import (
     ClassroomCreate,
@@ -22,6 +23,7 @@ from app.schemas.auth import CurrentUser
 from app.schemas.roles import StaffCreate
 from app.services.roles import create_staff_with_primary_role
 from app.services.access_control import ensure_permission_scope
+from app.services.entitlements import EntitlementService
 
 router = APIRouter()
 
@@ -29,10 +31,14 @@ router = APIRouter()
 @router.post("/teachers", response_model=TeacherResponse, status_code=201)
 async def create_teacher(
     data: TeacherCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("staff.create", "roles.assign"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.STAFF_MANAGE, "staff.create", "roles.assign"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
     redis_client: Annotated[redis.Redis, Depends(get_redis)],
 ) -> Teacher:
+    await EntitlementService(session, redis_client).check_quota(
+        actor.tenant_id,
+        FeatureCode.QUOTA_ACTIVE_STAFF,
+    )
     staff = await create_staff_with_primary_role(
         session,
         redis_client,
@@ -76,7 +82,7 @@ async def create_teacher(
 
 @router.get("/teachers", response_model=list[TeacherResponse])
 async def get_teachers(
-    actor: Annotated[CurrentUser, Depends(require_permissions("staff.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.STAFF_MANAGE, "staff.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> list[Teacher]:
     result = await session.execute(
@@ -88,7 +94,7 @@ async def get_teachers(
 @router.post("/classrooms", response_model=ClassroomResponse, status_code=201)
 async def create_classroom(
     data: ClassroomCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("classes.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.CLASSES_MANAGE, "classes.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Classroom:
     if data.teacher_id:
@@ -119,7 +125,7 @@ async def create_classroom(
 
 @router.get("/classrooms", response_model=list[ClassroomResponse])
 async def get_classrooms(
-    actor: Annotated[CurrentUser, Depends(require_permissions("classes.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.CLASSES_MANAGE, "classes.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> list[Classroom]:
     result = await session.execute(
@@ -155,7 +161,7 @@ async def get_audit_logs(
 @router.post("/subjects", response_model=SubjectResponse, status_code=201)
 async def create_subject(
     data: SubjectCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("subjects.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.SUBJECTS_MANAGE, "subjects.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Subject:
     subject = Subject(tenant_id=actor.tenant_id, name=data.name, code=data.code.upper())
@@ -168,7 +174,7 @@ async def create_subject(
 @router.post("/grades", response_model=GradeResponse, status_code=201)
 async def enter_grade(
     data: GradeCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("scores.enter"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.RESULTS_MANAGE, "scores.enter"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Grade:
     await ensure_permission_scope(
@@ -199,11 +205,10 @@ async def enter_grade(
     await session.refresh(grade)
     return grade
 
-
 @router.post("/grades/{grade_id}/submit", response_model=GradeResponse)
 async def submit_grade(
     grade_id: UUID,
-    actor: Annotated[CurrentUser, Depends(require_permissions("scores.submit"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.RESULTS_MANAGE, "scores.submit"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Grade:
     grade = await session.scalar(
@@ -224,7 +229,7 @@ async def submit_grade(
 @router.post("/grades/{grade_id}/approve", response_model=GradeResponse)
 async def approve_grade(
     grade_id: UUID,
-    actor: Annotated[CurrentUser, Depends(require_permissions("scores.approve"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.RESULTS_MANAGE, "scores.approve"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Grade:
     grade = await session.scalar(
