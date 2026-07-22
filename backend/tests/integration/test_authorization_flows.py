@@ -27,6 +27,7 @@ from app.models.core import (
     User,
     UserPermission,
 )
+from app.models.subscriptions import SubscriptionPlan, TenantSubscription
 
 pytestmark = [
     pytest.mark.asyncio,
@@ -169,6 +170,17 @@ async def _seed_authorization_scenario() -> dict[str, object]:
             await session.execute(
                 text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
                 {"tenant_id": str(tenant_a.id)},
+            )
+            plan = await session.scalar(
+                select(SubscriptionPlan).where(SubscriptionPlan.code == "ENTERPRISE_PLUS")
+            )
+            session.add(
+                TenantSubscription(
+                    tenant_id=tenant_a.id,
+                    plan_id=plan.id,
+                    status="ACTIVE",
+                    is_current=True,
+                )
             )
             subject = Subject(tenant_id=tenant_a.id, name="Mathematics", code=f"M{suffix}")
             classroom = Classroom(tenant_id=tenant_a.id, name=f"Class {suffix}")
@@ -335,6 +347,14 @@ async def _seed_authorization_scenario() -> dict[str, object]:
             await session.execute(
                 text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
                 {"tenant_id": str(tenant_b.id)},
+            )
+            session.add(
+                TenantSubscription(
+                    tenant_id=tenant_b.id,
+                    plan_id=plan.id,
+                    status="ACTIVE",
+                    is_current=True,
+                )
             )
             tenant_b_role = await _add_role(
                 session,

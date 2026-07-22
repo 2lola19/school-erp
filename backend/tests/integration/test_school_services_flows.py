@@ -21,6 +21,7 @@ from app.models.core import (
     Tenant,
     User,
 )
+from app.models.subscriptions import SubscriptionPlan, TenantSubscription
 
 pytestmark = [
     pytest.mark.asyncio,
@@ -76,6 +77,17 @@ async def _seed() -> dict[str, str]:
         await session.execute(
             text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
             {"tenant_id": str(tenant.id)},
+        )
+        plan = await session.scalar(
+            select(SubscriptionPlan).where(SubscriptionPlan.code == "ENTERPRISE_PLUS")
+        )
+        session.add(
+            TenantSubscription(
+                tenant_id=tenant.id,
+                plan_id=plan.id,
+                status="ACTIVE",
+                is_current=True,
+            )
         )
         permissions = {}
         for name in sorted(all_permissions):

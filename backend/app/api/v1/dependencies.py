@@ -10,10 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import ALGORITHM
+from app.core.feature_registry import FeatureCode
 from app.db.session import AsyncSessionLocal
 from app.models.core import User
 from app.schemas.auth import CurrentUser, TokenPayload
 from app.services.access_control import get_effective_permissions
+from app.services.entitlements import EntitlementService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
 
@@ -111,5 +113,27 @@ def require_permissions(*required: str) -> Callable:
                 detail=f"Missing permissions: {', '.join(sorted(missing))}",
             )
         return current_user
+
+    return dependency
+
+
+def require_access(
+    feature_code: FeatureCode,
+    *required_permissions: str,
+    write: bool = True,
+) -> Callable:
+    """Require both user RBAC permission and tenant subscription entitlement."""
+
+    async def dependency(
+        actor: Annotated[CurrentUser, Depends(require_permissions(*required_permissions))],
+        session: Annotated[AsyncSession, Depends(get_rls_db)],
+        redis_client: Annotated[redis.Redis, Depends(get_redis)],
+    ) -> CurrentUser:
+        await EntitlementService(session, redis_client).require_feature(
+            actor.tenant_id,
+            feature_code,
+            write=write,
+        )
+        return actor
 
     return dependency

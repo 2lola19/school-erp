@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { useAuthStore } from '@/store/authStore';
 import type { TokenResponse, UserContext } from '@/types/api';
+import { EntitlementProvider } from '@/components/entitlements/EntitlementProvider';
 
 function AuthBootstrap() {
   const { setAccessToken, setInitialized, setProfile } = useAuthStore();
@@ -37,7 +38,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthBootstrap />
-      {children}
+      <EntitlementProvider>{children}</EntitlementProvider>
     </QueryClientProvider>
   );
 }

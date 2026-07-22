@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.dependencies import get_current_user, get_rls_db, require_permissions
+from app.api.v1.dependencies import get_current_user, get_rls_db, require_access
+from app.core.feature_registry import FeatureCode
 from app.models.core import (
     AcademicSession,
     Activity,
@@ -137,7 +138,7 @@ async def _finish(session: AsyncSession, entity):
 @router.post("/finance/fee-schedules", response_model=FeeScheduleResponse, status_code=201)
 async def create_fee_schedule(
     payload: FeeScheduleCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("finance.fees.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.FINANCE_INVOICING, "finance.fees.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> FeeSchedule:
     if payload.academic_session_id:
@@ -157,7 +158,7 @@ async def create_fee_schedule(
 
 @router.get("/finance/invoices", response_model=list[InvoiceResponse])
 async def list_invoices(
-    actor: Annotated[CurrentUser, Depends(require_permissions("finance.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.FINANCE_INVOICING, "finance.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
     student_id: UUID | None = None,
 ) -> list[Invoice]:
@@ -171,7 +172,7 @@ async def list_invoices(
 @router.post("/finance/invoices", response_model=InvoiceResponse, status_code=201)
 async def create_invoice(
     payload: InvoiceCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("finance.invoice"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.FINANCE_INVOICING, "finance.invoice"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Invoice:
     await _entity(session, Student, payload.student_id, actor, "Student")
@@ -195,7 +196,7 @@ async def create_invoice(
 async def record_payment(
     payload: PaymentCreate,
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("finance.receive_payment"))
+        CurrentUser, Depends(require_access(FeatureCode.FINANCE_PAYMENTS, "finance.receive_payment"))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Payment:
@@ -222,7 +223,7 @@ async def decide_payment(
     payment_id: UUID,
     payload: DecisionAction,
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("finance.approve_payment"))
+        CurrentUser, Depends(require_access(FeatureCode.FINANCE_PAYMENTS, "finance.approve_payment"))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Payment:
@@ -260,7 +261,7 @@ async def decide_payment(
 async def request_refund(
     payload: RefundCreate,
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("finance.refund.request"))
+        CurrentUser, Depends(require_access(FeatureCode.FINANCE_REFUNDS, "finance.refund.request"))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> RefundRequest:
@@ -295,7 +296,7 @@ async def decide_refund(
     refund_id: UUID,
     payload: DecisionAction,
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("finance.refund.approve"))
+        CurrentUser, Depends(require_access(FeatureCode.FINANCE_REFUNDS, "finance.refund.approve"))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> RefundRequest:
@@ -345,7 +346,7 @@ async def decide_refund(
 @router.put("/health/records", response_model=HealthRecordResponse)
 async def upsert_health_record(
     payload: HealthRecordUpsert,
-    actor: Annotated[CurrentUser, Depends(require_permissions("health.records.write"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.MEDICAL_RECORDS, "health.records.write"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> HealthRecord:
     await _entity(session, Student, payload.student_id, actor, "Student")
@@ -429,7 +430,7 @@ async def get_health_record(
 @router.post("/health/encounters", response_model=HealthEncounterResponse, status_code=201)
 async def create_health_encounter(
     payload: HealthEncounterCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("health.records.write"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.MEDICAL_RECORDS, "health.records.write"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> HealthEncounter:
     await _entity(
@@ -451,7 +452,7 @@ async def create_health_encounter(
 @router.post("/health/consents", response_model=MedicalConsentResponse, status_code=201)
 async def create_medical_consent(
     payload: MedicalConsentCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("health.consents.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.MEDICAL_RECORDS, "health.consents.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> MedicalConsent:
     await _entity(session, Student, payload.student_id, actor, "Student")
@@ -469,7 +470,7 @@ async def create_medical_consent(
 @router.post("/health/emergency-flags", response_model=EmergencyFlagResponse, status_code=201)
 async def create_emergency_flag(
     payload: EmergencyFlagCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("health.records.write"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.MEDICAL_RECORDS, "health.records.write"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> EmergencyHealthFlag:
     await _entity(session, Student, payload.student_id, actor, "Student")
@@ -491,7 +492,7 @@ async def create_emergency_flag(
 async def list_emergency_flags(
     student_id: UUID,
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("health.emergency_flags.read"))
+        CurrentUser, Depends(require_access(FeatureCode.MEDICAL_EMERGENCY_FLAGS, "health.emergency_flags.read", write=False))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> list[EmergencyHealthFlag]:
@@ -520,7 +521,7 @@ async def list_emergency_flags(
 async def grant_break_glass(
     payload: BreakGlassCreate,
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("health.break_glass.grant"))
+        CurrentUser, Depends(require_access(FeatureCode.MEDICAL_RECORDS, "health.break_glass.grant"))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> BreakGlassAccess:
@@ -557,7 +558,7 @@ async def review_break_glass(
     grant_id: UUID,
     payload: DecisionAction,
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("health.break_glass.review"))
+        CurrentUser, Depends(require_access(FeatureCode.MEDICAL_RECORDS, "health.break_glass.review"))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> BreakGlassAccess:
@@ -587,7 +588,7 @@ async def review_break_glass(
 async def create_counselling_case(
     payload: CounsellingCaseCreate,
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("counselling.cases.manage"))
+        CurrentUser, Depends(require_access(FeatureCode.MEDICAL_RECORDS, "counselling.cases.manage"))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> CounsellingCase:
@@ -607,7 +608,7 @@ async def create_counselling_case(
 @router.get("/counselling/cases", response_model=list[CounsellingCaseResponse])
 async def list_counselling_cases(
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("counselling.cases.read"))
+        CurrentUser, Depends(require_access(FeatureCode.MEDICAL_RECORDS, "counselling.cases.read", write=False))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> list[CounsellingCase]:
@@ -626,7 +627,7 @@ async def list_counselling_cases(
 async def create_counselling_encounter(
     payload: CounsellingEncounterCreate,
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("counselling.encounters.write"))
+        CurrentUser, Depends(require_access(FeatureCode.MEDICAL_RECORDS, "counselling.encounters.write"))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> CounsellingEncounter:
@@ -651,7 +652,7 @@ async def create_counselling_encounter(
 @router.post("/library/items", response_model=LibraryItemResponse, status_code=201)
 async def create_library_item(
     payload: LibraryItemCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("library.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.LIBRARY_CIRCULATION, "library.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> LibraryItem:
     item = LibraryItem(
@@ -667,7 +668,7 @@ async def create_library_item(
 
 @router.get("/library/items", response_model=list[LibraryItemResponse])
 async def list_library_items(
-    actor: Annotated[CurrentUser, Depends(require_permissions("library.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.LIBRARY_CIRCULATION, "library.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> list[LibraryItem]:
     result = await session.execute(
@@ -681,7 +682,7 @@ async def list_library_items(
 @router.post("/library/loans", response_model=LibraryLoanResponse, status_code=201)
 async def issue_library_loan(
     payload: LibraryLoanCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("library.loans.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.LIBRARY_CIRCULATION, "library.loans.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> LibraryLoan:
     item = await _entity(session, LibraryItem, payload.item_id, actor, "Library item", lock=True)
@@ -703,7 +704,7 @@ async def issue_library_loan(
 @router.post("/library/loans/{loan_id}/return", response_model=LibraryLoanResponse)
 async def return_library_loan(
     loan_id: UUID,
-    actor: Annotated[CurrentUser, Depends(require_permissions("library.loans.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.LIBRARY_CIRCULATION, "library.loans.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> LibraryLoan:
     loan = await _entity(session, LibraryLoan, loan_id, actor, "Library loan", lock=True)
@@ -720,7 +721,7 @@ async def return_library_loan(
 @router.post("/transport/routes", response_model=TransportRouteResponse, status_code=201)
 async def create_transport_route(
     payload: TransportRouteCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("transport.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.TRANSPORT_ROUTES, "transport.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> TransportRoute:
     route = TransportRoute(tenant_id=actor.tenant_id, **payload.model_dump())
@@ -732,7 +733,7 @@ async def create_transport_route(
 
 @router.get("/transport/routes", response_model=list[TransportRouteResponse])
 async def list_transport_routes(
-    actor: Annotated[CurrentUser, Depends(require_permissions("transport.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.TRANSPORT_ROUTES, "transport.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> list[TransportRoute]:
     result = await session.execute(
@@ -750,7 +751,7 @@ async def list_transport_routes(
 )
 async def assign_transport(
     payload: TransportAssignmentCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("transport.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.TRANSPORT_ROUTES, "transport.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> TransportAssignment:
     route = await _entity(
@@ -778,7 +779,7 @@ async def assign_transport(
 @router.post("/hostels", response_model=HostelResponse, status_code=201)
 async def create_hostel(
     payload: HostelCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("hostel.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.HOSTEL_MANAGE, "hostel.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Hostel:
     hostel = Hostel(tenant_id=actor.tenant_id, **payload.model_dump())
@@ -790,7 +791,7 @@ async def create_hostel(
 
 @router.get("/hostels", response_model=list[HostelResponse])
 async def list_hostels(
-    actor: Annotated[CurrentUser, Depends(require_permissions("hostel.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.HOSTEL_MANAGE, "hostel.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> list[Hostel]:
     result = await session.execute(
@@ -802,7 +803,7 @@ async def list_hostels(
 @router.post("/hostels/rooms", response_model=HostelRoomResponse, status_code=201)
 async def create_hostel_room(
     payload: HostelRoomCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("hostel.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.HOSTEL_MANAGE, "hostel.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> HostelRoom:
     hostel = await _entity(
@@ -830,7 +831,7 @@ async def create_hostel_room(
 )
 async def assign_hostel_room(
     payload: HostelAssignmentCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("hostel.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.HOSTEL_MANAGE, "hostel.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> HostelAssignment:
     room = await _entity(session, HostelRoom, payload.room_id, actor, "Hostel room", lock=True)
@@ -854,7 +855,7 @@ async def assign_hostel_room(
 @router.post("/activities", response_model=ActivityResponse, status_code=201)
 async def create_activity(
     payload: ActivityCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("activities.manage"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.STUDENT_LIFE_ACTIVITIES, "activities.manage"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> Activity:
     if payload.lead_staff_id:
@@ -868,7 +869,7 @@ async def create_activity(
 
 @router.get("/activities", response_model=list[ActivityResponse])
 async def list_activities(
-    actor: Annotated[CurrentUser, Depends(require_permissions("activities.read"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.STUDENT_LIFE_ACTIVITIES, "activities.read", write=False))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> list[Activity]:
     result = await session.execute(
@@ -884,7 +885,7 @@ async def list_activities(
 )
 async def enroll_activity(
     payload: ActivityEnrollmentCreate,
-    actor: Annotated[CurrentUser, Depends(require_permissions("activities.enroll"))],
+    actor: Annotated[CurrentUser, Depends(require_access(FeatureCode.STUDENT_LIFE_ACTIVITIES, "activities.enroll"))],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> ActivityEnrollment:
     await ensure_permission_scope(
@@ -911,7 +912,7 @@ async def enroll_activity(
 async def mark_activity_attendance(
     payload: ActivityAttendanceCreate,
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("activities.attendance"))
+        CurrentUser, Depends(require_access(FeatureCode.STUDENT_LIFE_ACTIVITIES, "activities.attendance"))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> ActivityAttendance:
@@ -951,7 +952,7 @@ async def mark_activity_attendance(
 async def submit_achievement(
     payload: AchievementCreate,
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("activities.achievement.submit"))
+        CurrentUser, Depends(require_access(FeatureCode.STUDENT_LIFE_ACTIVITIES, "activities.achievement.submit"))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> ActivityAchievement:
@@ -984,7 +985,6 @@ async def submit_achievement(
     session.add(_audit(actor, "ACTIVITY_ACHIEVEMENT_SUBMITTED", "ACTIVITY_ACHIEVEMENT", achievement.id))
     return await _finish(session, achievement)
 
-
 @router.post(
     "/activities/achievements/{achievement_id}/decision",
     response_model=AchievementResponse,
@@ -993,7 +993,7 @@ async def decide_achievement(
     achievement_id: UUID,
     payload: DecisionAction,
     actor: Annotated[
-        CurrentUser, Depends(require_permissions("activities.achievement.approve"))
+        CurrentUser, Depends(require_access(FeatureCode.STUDENT_LIFE_ACTIVITIES, "activities.achievement.approve"))
     ],
     session: Annotated[AsyncSession, Depends(get_rls_db)],
 ) -> ActivityAchievement:
